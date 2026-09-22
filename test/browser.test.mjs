@@ -201,3 +201,21 @@ t('the unmodelled-trait note covers the secondary weapon too', async () => {
   assert.doesNotMatch(await page.textContent('#panel-melee [data-notes]'), /Ammo \(6\+\)/);
 });
 
+
+t('a Blast weapon scatters, and says so in as many words', async () => {
+  await page.click('#tab-ranged');
+  await setSel('panel-ranged', 'pick.weapon', 'Frag grenades');
+  assert.equal(await page.isChecked('#panel-ranged [data-bind="w1.blast"]'), true);
+
+  const notes = await page.textContent('#panel-ranged [data-notes]');
+  assert.match(notes, /scatter of 1" or 2" is counted as a hit/);
+  assert.match(notes, /misfire/);
+  assert.doesNotMatch(notes, /Not part of this calculation:.*Blast/);
+
+  const withScatter = await odds('panel-ranged');
+  await check('panel-ranged', 'w1.blast', false);
+  const without = await odds('panel-ranged');
+  assert.ok(parseFloat(withScatter.ooa) > parseFloat(without.ooa),
+    'counting 1-2" scatters should make a blast weapon deadlier');
+  assert.doesNotMatch(await page.textContent('#panel-ranged [data-notes]'), /scatter of 1"/);
+});

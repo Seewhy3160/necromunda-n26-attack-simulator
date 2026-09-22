@@ -13,7 +13,7 @@ function weapon(o = {}) {
     str: 4, ap: 0, lethality: 1, damage: 1, rapidFire: 0,
     toxin: 0, rending: 0, shred: 0, breaching: 0, shock: 0, blaze: 0,
     gas: false, web: false, flash: false, graviton: false,
-    autoHit: false, unstable: false
+    autoHit: false, blast: false, unstable: false
   }, o);
 }
 function target(o = {}) {
@@ -208,3 +208,42 @@ function binom(n, k) {
   for (let i = 0; i < k; i++) r = r * (n - i) / (i + 1);
   return r;
 }
+
+test('Blast scatter: 1" and 2" still cover the target (p162)', () => {
+  // Scatter dice is 1-4 Arrow, 5-6 Hit (with arrow); a Hit symbol with a 1 misfires.
+  near(E.SCATTER_COVERS, 10 / 36);    // 1" by arrow (4/36), or 2" any face (6/36)
+  near(E.SCATTER_MISFIRE, 2 / 36);
+
+  const plain = ranged({ skill: 4, weapon: weapon({ str: 10 }) });
+  const blast = ranged({ skill: 4, weapon: weapon({ str: 10, blast: true }) });
+  near(plain.pHit, 3 / 6);
+  near(blast.pHit, 3 / 6 + (3 / 6) * (10 / 36));
+  near(blast.scatterHit, (3 / 6) * (10 / 36));
+  near(blast.misfire, (3 / 6) * (2 / 36));
+  assert.ok(blast.outOfAction > plain.outOfAction);
+  near(blast.total, 1);
+});
+
+test('even a shot that can only miss on a natural 1 still gets a scatter', () => {
+  const sure = ranged({ skill: 2, hitMod: 3, weapon: weapon({ str: 10, blast: true }) });
+  near(sure.pHit, 5 / 6 + (1 / 6) * (10 / 36));   // the natural 1 may scatter back on
+  near(sure.scatterHit, (1 / 6) * (10 / 36));
+  near(sure.misfire, (1 / 6) * (2 / 36));
+});
+
+test('Shock cannot trigger on a scattered hit, because the hit roll failed', () => {
+  // WS/BS 6+ with Shock (2+): a direct hit auto-wounds, a scattered one does not.
+  const r = ranged({ skill: 6, weapon: weapon({ str: 1, shock: 2, blast: true }), target: target({ T: 10 }) });
+  // Str 1 vs T10 wounds only on a natural 6 without Shock.
+  const direct = 1 / 6;                        // a natural 6 hits and triggers Shock
+  const scattered = (5 / 6) * (10 / 36);       // the other five faces may scatter on
+  const l1 = E.injuryPick(1, FACES);
+  near(r.outOfAction, (direct * 1 + scattered * (1 / 6)) * l1.ooa);
+});
+
+test('Blast changes nothing for a Template weapon, which cannot miss', () => {
+  const a = ranged({ weapon: weapon({ str: 10, autoHit: true }) });
+  const b = ranged({ weapon: weapon({ str: 10, autoHit: true, blast: true }) });
+  near(a.outOfAction, b.outOfAction);
+  near(b.scatterHit, 0);
+});

@@ -29,6 +29,8 @@ function makeSim(rand) {
   };
   /* Firepower dice: 1-3 one hit, 4-5 two hits, 6 three hits. */
   const firepowerDie = () => { const f = d6(); return f <= 3 ? 1 : (f <= 5 ? 2 : 3); };
+  /* Scatter dice: 1-4 Arrow, 5-6 Hit (with arrow). */
+  const scatterIsCrosshair = () => d6() >= 5;
 
   function woundTarget(S, T) {
     if (S >= 2 * T) return 2;
@@ -96,7 +98,7 @@ function makeSim(rand) {
     return { ...st, w: 0, cond };
   }
 
-  return { d6, firepowerDie, resolveHit };
+  return { d6, firepowerDie, scatterIsCrosshair, resolveHit };
 }
 
 function simulateRanged(cfg, trials, seed) {
@@ -114,6 +116,13 @@ function simulateRanged(cfg, trials, seed) {
     else {
       const f = sim.d6();
       if (f === 6 || (f !== 1 && f + mod >= cfg.skill)) { hits = 1; shock = w.shock && f >= w.shock; }
+      else if (w.blast) {
+        // Scatter D6" in the Scatter dice direction. A crosshair with a 1 is a
+        // misfire and lands on the firer; otherwise 1" or 2" still covers the target.
+        const crosshair = sim.scatterIsCrosshair();
+        const inches = sim.d6();
+        if (!(crosshair && inches === 1) && inches <= 2) hits = 1;
+      }
     }
     if (hits) {
       let n = 1;
@@ -165,7 +174,8 @@ function weapon(o = {}) {
   return Object.assign({
     str: 4, ap: 0, lethality: 1, damage: 1, rapidFire: 0,
     toxin: 0, rending: 0, shred: 0, breaching: 0, shock: 0, blaze: 0,
-    gas: false, web: false, flash: false, graviton: false, autoHit: false, unstable: false
+    gas: false, web: false, flash: false, graviton: false, autoHit: false,
+    blast: false, unstable: false
   }, o);
 }
 function target(o = {}) {
@@ -187,7 +197,11 @@ const RANGED_CASES = [
   ['web gun against an invulnerable save', { skill: 4, hitMod: 0, weapon: weapon({ str: 5, lethality: 0, web: true, autoHit: true }), target: target({ T: 3, sv: 4, inv: 5 }) }],
   ['photon flash grenade', { skill: 4, hitMod: 0, weapon: weapon({ str: null, flash: true }), target: target({ initiative: 3 }) }],
   ['rapid fire 2 into an already Seriously Injured target', { skill: 3, hitMod: 0, weapon: weapon({ str: 4, ap: -1, lethality: 2, rapidFire: 2 }), target: target({ T: 3, sv: 5, status: 'seriously' }) }],
-  ['plasma gun, Damage (2), Lethality 2, W3 target', { skill: 4, hitMod: 0, weapon: weapon({ str: 5, ap: -2, lethality: 2, damage: 2, rapidFire: 1 }), target: target({ T: 4, W: 3, sv: 4, inv: 5 }) }]
+  ['plasma gun, Damage (2), Lethality 2, W3 target', { skill: 4, hitMod: 0, weapon: weapon({ str: 5, ap: -2, lethality: 2, damage: 2, rapidFire: 1 }), target: target({ T: 4, W: 3, sv: 4, inv: 5 }) }],
+  ['frag grenade: Blast, scattering onto the target', { skill: 4, hitMod: 0, weapon: weapon({ str: 3, lethality: 1, blast: true }), target: target({ T: 3, W: 1, sv: 5 }) }],
+  ['plasma cannon: Blast, Damage (2), Lethality 2, at a long shot', { skill: 5, hitMod: -1, weapon: weapon({ str: 6, ap: -2, lethality: 2, damage: 2, blast: true }), target: target({ T: 4, W: 2, sv: 4, saveMods: 2 }) }],
+  ['grav gun: Blast plus Graviton Pulse', { skill: 4, hitMod: 0, weapon: weapon({ str: null, lethality: 2, graviton: true, blast: true }), target: target({ strength: 3, W: 2, sv: 3 }) }],
+  ['photon flash grenade: Blast plus Flash', { skill: 4, hitMod: 0, weapon: weapon({ str: null, flash: true, blast: true }), target: target({ initiative: 4 }) }]
 ];
 
 const MELEE_CASES = [

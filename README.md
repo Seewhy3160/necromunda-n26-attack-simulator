@@ -38,12 +38,15 @@ three-attack melee flurry are all handled by the same chain:
    Injured target applies its −1 automatically.
 2. **Rapid Fire** (p73). One hit roll turns into a number of hits equal to the total
    bullet holes across X Firepower dice — one hit on a 1–3, two on a 4–5, three on a 6.
-3. **Wound roll** (p76), from the Strength versus Toughness table, or replaced by
+3. **Blast scatter** (p162). A missed Blast shot scatters D6" in the direction of the
+   Scatter dice, and a marker that moves only 1" or 2" still covers the model it was
+   aimed at — see the disclaimer below.
+4. **Wound roll** (p76), from the Strength versus Toughness table, or replaced by
    Toxin, Shock, Graviton Pulse or Flash where a trait says so.
-4. **Save roll** (p76). AP, cover and characteristic bumps fold into one modifier; the
+5. **Save roll** (p76). AP, cover and characteristic bumps fold into one modifier; the
    model takes whichever of its armour and invulnerable saves is better, because only
    one save is rolled per hit. A natural 1 or 2 always fails.
-5. **Injury dice** (p77). An unsaved wound that drops the target to zero Wounds means
+6. **Injury dice** (p77). An unsaved wound that drops the target to zero Wounds means
    Lethality Injury dice — 1–2 Flesh Wound, 3–5 Seriously Injured, 6 Out of Action — of
    which the attacker **selects one**, so the best available result is taken, and a
    Serious Injury does nothing to a model already Seriously Injured.
@@ -53,17 +56,44 @@ carry from one attack to the next.
 
 ### Traits that change the numbers
 
-Rapid Fire, Toxin, Rending, Shred, Breaching, Shock, Blaze, Gas (and respirators), Web,
-Flash, Graviton Pulse, Damage (X), Template, Light, Paired (X), Parry and Shield on the
-target's side, and Unwieldy only in as much as it does not affect the odds.
+Rapid Fire, Blast, Toxin, Rending, Shred, Breaching, Shock, Blaze, Gas (and respirators),
+Web, Flash, Graviton Pulse, Damage (X), Template, Light, Paired (X), Parry and Shield on
+the target's side, and Unwieldy only in as much as it does not affect the odds.
 
 ### Traits that do not
 
-Blast scatter, running out of ammo and jams, Knockback, Concussive, Drag, Rad-phage,
+Running out of ammo and jams, Knockback, Concussive, Drag, Rad-phage,
 Cursed, Reckless, Smoke, Twin-linked, Stray Shots, Target Priority, Nerve checks,
 Initiative order and return attacks, skills, and the Lasting Injury table. When a picked
 weapon carries one of these, the page names it under the results rather than dropping it
 silently.
+
+### Blast scatter, and what counts as a hit
+
+> **A scatter of 1" or 2" is counted as a hit on the target.**
+
+A Blast shot that fails its hit roll scatters D6" in the direction of the Scatter dice,
+which reads 1–4 Arrow and 5–6 Hit (with arrow). A 3" or 5" marker that moves only an inch
+or two still covers the model it was aimed at, so those distances are scored as hits;
+3" or more scatters clear. A Hit symbol alongside a 1 is a misfire, which centres the
+marker on the firer instead (p162).
+
+For a shot that has missed, that works out as:
+
+| Scatter | Chance | Target |
+|---|---|---|
+| 1", Arrow face | 4/36 | hit |
+| 2", any face | 6/36 | hit |
+| 1", Hit face — misfire, centres on the firer | 2/36 | not hit |
+| 3"–6" | 24/36 | not hit |
+
+So **10 in 36 of missed Blast shots still hit**, which the tool reports both as a share of
+missed shots and as a share of all shots. A scattered hit comes off a failed hit roll, so
+Shock (X+), which keys off that roll, cannot trigger on it.
+
+Markers catching models other than the target, and the extra markers a Rapid Fire Blast
+weapon would throw, are outside a one-attacker-one-target calculation. No weapon in the
+Trading Post list has both traits.
 
 ## Assumptions, and one thing worth checking against your book
 

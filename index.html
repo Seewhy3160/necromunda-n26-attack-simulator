@@ -287,6 +287,16 @@ const Engine = (function () {
     return dist;
   }
 
+  /* ---- Blast scatter (p162) ---------------------------------------------
+     A Blast marker that misses scatters D6" in the direction of the Scatter
+     dice, which reads 1-4 Arrow and 5-6 Hit (with arrow). A Hit symbol
+     alongside a 1 is a misfire and centres the marker on the firer instead.
+
+     A 3" or 5" marker that moves only 1" or 2" still covers the model it was
+     aimed at, so those distances are counted as hits on the target. */
+  const SCATTER_MISFIRE = (2 / 6) * (1 / 6);                 // crosshair face plus a 1
+  const SCATTER_COVERS = (1 / 6) * (4 / 6) + (1 / 6);        // 1" by arrow, or 2" any face
+
   /* Hit roll (p72 / p74). Natural 1 always misses, natural 6 always hits. */
   const isHit = (face, skill, mod) => face === 6 || (face !== 1 && face + mod >= skill);
 
@@ -342,22 +352,38 @@ const Engine = (function () {
           shock: w.shock > 0 && f >= w.shock
         }));
 
-    let out = new Map();
-    let pHit = 0;
-    for (const b of branches) {
-      if (!b.hit) { addTo(out, start, b.p); continue; }
-      pHit += b.p;
-      const effects = b.shock ? ctx.shockEffects : ctx.effects;
+    const out = new Map();
+    const resolveHits = (effects, weight) => {
+      if (weight <= 0) return;
       for (const [n, pn] of hitCounts) {
         let dist = new Map([[start, 1]]);
         for (let i = 0; i < n; i++) dist = applyHit(dist, ctx, effects, true);
-        for (const [k, q] of dist) addTo(out, k, b.p * pn * q);
+        for (const [k, q] of dist) addTo(out, k, weight * pn * q);
+      }
+    };
+
+    let pDirect = 0, pScatterHit = 0, pMisfire = 0;
+    for (const b of branches) {
+      if (b.hit) {
+        pDirect += b.p;
+        resolveHits(b.shock ? ctx.shockEffects : ctx.effects, b.p);
+      } else if (w.blast) {
+        // A scattered marker may still cover the target. It came off a failed
+        // hit roll, so Shock (X+), which keys off that roll, cannot trigger.
+        pScatterHit += b.p * SCATTER_COVERS;
+        pMisfire += b.p * SCATTER_MISFIRE;
+        resolveHits(ctx.effects, b.p * SCATTER_COVERS);
+        addTo(out, start, b.p * (1 - SCATTER_COVERS));
+      } else {
+        addTo(out, start, b.p);
       }
     }
 
     let expectedHits = 0;
     for (const [n, pn] of hitCounts) expectedHits += n * pn;
-    return summarise(out, start, { ctx: ctx, pHit: pHit, expectedHits: pHit * expectedHits });
+    const pHit = pDirect + pScatterHit;
+    return summarise(out, start, { ctx: ctx, pHit: pHit, expectedHits: pHit * expectedHits,
+                                   pScatterHit: pScatterHit, pMisfire: pMisfire });
   }
 
   /* ---- Melee attack (p74) ----------------------------------------------
@@ -426,6 +452,8 @@ const Engine = (function () {
     r.changed = 1 - probOf(dist, startId);
     r.pHit = extra.pHit;
     r.expectedHits = extra.expectedHits;
+    r.scatterHit = extra.pScatterHit || 0;
+    r.misfire = extra.pMisfire || 0;
     r.problems = extra.ctx.problems;
     r.woundTarget = extra.ctx.woundTarget;
     r.perHit = perHitBreakdown(extra.ctx);
@@ -455,6 +483,7 @@ const Engine = (function () {
     computeRanged: computeRanged, computeMelee: computeMelee,
     woundTarget: woundTarget, saveProb: saveProb, injuryPick: injuryPick,
     firepowerDist: firepowerDist, isHit: isHit, INJURY_DICE: INJURY_DICE,
+    SCATTER_COVERS: SCATTER_COVERS, SCATTER_MISFIRE: SCATTER_MISFIRE,
     COND: { NONE: NONE, INJURED: INJURED, SERIOUS: SERIOUS, OOA: OOA }
   };
 })();
@@ -722,7 +751,7 @@ if (typeof module !== 'undefined') module.exports = Data;
      rather than silently dropped. */
   const MODELLED = ['Rapid Fire', 'Toxin', 'Rending', 'Shred', 'Breaching', 'Shock',
     'Blaze', 'Gas', 'Web', 'Flash', 'Graviton Pulse', 'Damage', 'Template', 'Light',
-    'Melee', 'Paired'];
+    'Melee', 'Paired', 'Blast'];
 
   function splitTraits(text) {
     return (text || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -772,6 +801,7 @@ if (typeof module !== 'undefined') module.exports = Data;
       field('Blaze (X+)', prefix + '.blaze', XPLUS, 0),
       chipRow(
         chip('Template (hits automatically)', prefix + '.autoHit', false),
+        melee ? null : chip('Blast (scatters on a miss)', prefix + '.blast', false),
         chip('Gas', prefix + '.gas', false),
         chip('Web', prefix + '.web', false),
         chip('Flash', prefix + '.flash', false),
@@ -815,7 +845,13 @@ if (typeof module !== 'undefined') module.exports = Data;
       'Nothing here is rolled or sampled — every figure is worked out exactly by enumerating the dice.' }));
     if (extra) body.appendChild(el('p', { html: extra }));
     body.appendChild(el('p', { html:
-      '<b>Not modelled:</b> Blast scatter, running out of ammo and jams, Knockback, Concussive, Drag, Rad-phage, ' +
+      '<b>Blast scatter.</b> A missed Blast shot scatters D6" in the direction of the Scatter dice ' +
+      '(1-4 Arrow, 5-6 Hit with arrow). <b>A scatter of 1" or 2" counts as a hit</b>, because the ' +
+      'marker still covers the target; 3" or more misses it. A Hit symbol alongside a 1 is a misfire ' +
+      'and centres the marker on the firer (p162). Blast markers catching other models, and the ' +
+      'extra markers a Rapid Fire Blast weapon would throw, are outside a one-target calculation.' }));
+    body.appendChild(el('p', { html:
+      '<b>Not modelled:</b> running out of ammo and jams, Knockback, Concussive, Drag, Rad-phage, ' +
       'Cursed, Reckless, Smoke, Twin-linked, Stray Shots, Target Priority, Nerve checks, Initiative order and ' +
       'return attacks, skills, and the Lasting Injury table.' }));
     return el('details', {}, el('summary', { text: 'Assumptions and what is left out' }), body);
@@ -908,6 +944,7 @@ if (typeof module !== 'undefined') module.exports = Data;
     for (const k of ['autoHit', 'gas', 'web', 'flash', 'graviton']) {
       setControl(root, prefix + '.' + k, t[k]);
     }
+    if (!melee) setControl(root, prefix + '.blast', t.blast);
     if (melee) {
       setControl(root, prefix + '.light', t.light);
       setControl(root, prefix + '.strBonus', false);
@@ -963,7 +1000,7 @@ if (typeof module !== 'undefined') module.exports = Data;
       shred: Number(w.shred) || 0, breaching: Number(w.breaching) || 0,
       shock: Number(w.shock) || 0, blaze: Number(w.blaze) || 0,
       gas: !!w.gas, web: !!w.web, flash: !!w.flash, graviton: !!w.graviton,
-      autoHit: !!w.autoHit, unstable: false
+      autoHit: !!w.autoHit, blast: !!w.blast, unstable: false
     };
   }
 
@@ -999,6 +1036,7 @@ if (typeof module !== 'undefined') module.exports = Data;
       'Expected hits <b>' + res.expectedHits.toFixed(2) + '</b>',
       (notes.twoWeapons ? 'A primary hit wounds <b>' : 'A hit wounds <b>') + pct(res.perHit.pWound) + '</b>',
       'A wound beats the save <b>' + pct(res.perHit.pWound ? res.perHit.pUnsaved / res.perHit.pWound : 0) + '</b>');
+    if (res.scatterHit > 0) bits.push('...of which by scatter <b>' + pct(res.scatterHit) + '</b>');
     if (res.webbed > 0) bits.push('Webbed <b>' + pct(res.webbed) + '</b>');
     if (res.blinded > 0) bits.push('Blinded <b>' + pct(res.blinded) + '</b>');
     root.querySelector('[data-minor]').innerHTML = bits.join(' · ');
@@ -1051,6 +1089,12 @@ if (typeof module !== 'undefined') module.exports = Data;
         if (w.rapidFire > 0) notes.push('Rapid Fire (' + w.rapidFire + '): assumes all ' + w.rapidFire +
           ' Firepower dice are rolled. Running out of ammo is not tracked.');
         if (w.autoHit) notes.push('Template: the target is hit automatically, so hit modifiers and Shock (X+) never come into it.');
+        if (w.blast && !w.autoHit) notes.push(
+          '<b>Blast: a scatter of 1" or 2" is counted as a hit.</b> A missed shot scatters D6" ' +
+          'in a random direction, and a 3" or 5" marker that moves only 1" or 2" still covers the ' +
+          'model it was aimed at. That is ' + pct(Engine.SCATTER_COVERS) + ' of missed shots, or ' +
+          pct(res.scatterHit) + ' of all shots. A 1" scatter on the crosshair face is a misfire ' +
+          'and centres the marker on the firer instead: ' + pct(res.misfire) + ' of all shots.');
       } else {
         const sec = !!s.a.useSecondary;
         const dice = s.a.reacting ? 1 : (s.a.A + (s.a.charge ? 1 : 0) + (Number(s.a.paired) || 0));
@@ -1082,7 +1126,6 @@ if (typeof module !== 'undefined') module.exports = Data;
           for (const tr of unmodelled(p.traitText)) if (left.indexOf(tr) < 0) left.push(tr);
         }
         if (left.length) notes.push('Not part of this calculation: ' + left.join(', ') + '.');
-        if (inPlay.some(p => p.traits.blast)) notes.push('Blast: scatter is not modelled. The named target is treated as hit when the hit roll succeeds, and as missed otherwise.');
         if (inPlay.some(p => p.traits.smoke)) notes.push('Smoke: a model hit by it is never wounded and is not Suppressed (p165), so there is nothing to work out.');
         if (inPlay.some(p => p.traits.unstable)) notes.push('Unstable: on a natural 1 to hit, the firer takes a hit from this profile instead — 1 in 6 (p165).');
       }
