@@ -1,4 +1,4 @@
-# Necromunda Attack Simulator
+# Necromunda (N26) Attack Simulator
 
 One offline HTML file with two calculators, ranged and melee. Give it an attacker,
 a weapon profile and a target, and it returns the chance that the attack ends in a

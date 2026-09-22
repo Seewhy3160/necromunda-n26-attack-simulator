@@ -59,7 +59,7 @@ const check = (panel, bind, on) =>
 
 t('the page loads and computes without errors', async () => {
   assert.equal(errors.length, 0, errors.join('\n'));
-  assert.equal(await page.title(), 'Necromunda Attack Simulator');
+  assert.equal(await page.title(), 'Necromunda (N26) Attack Simulator');
   const o = await odds('panel-ranged');
   assert.match(o.flesh, /%$/);
   assert.match(o.ooa, /%$/);

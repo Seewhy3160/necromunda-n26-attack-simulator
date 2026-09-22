@@ -1,7 +1,7 @@
 {
   "name": "necromunda-n26-attack-simulator",
   "version": "1.0.0",
-  "description": "Offline single-file attack odds calculator for Necromunda N26",
+  "description": "Offline single-file attack odds calculator for Necromunda (N26)",
   "directories": {
     "test": "test"
   },
