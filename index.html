@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Necromunda Attack Simulator</title>
+<meta name="description" content="Offline exact-probability calculator for Necromunda ranged and melee attacks.">
+<style>
+:root{
+  --bg:#12131a; --panel:#1b1d27; --panel-2:#232635; --line:#333749;
+  --ink:#e9eaf2; --ink-dim:#a0a4bb; --ink-faint:#71768f;
+  --accent:#e0a458; --accent-ink:#1a1206;
+  --ooa:#e0574a; --serious:#e0a458; --flesh:#6fb3d8; --ok:#4f9d69;
+  --radius:10px; --gap:12px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font:16px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:0 0 64px;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{max-width:820px;margin:0 auto;padding:0 14px}
+header{padding:18px 0 10px}
+h1{font-size:19px;margin:0 0 3px;letter-spacing:.2px}
+.sub{color:var(--ink-faint);font-size:13px;margin:0}
+
+/* tabs */
+.tabs{display:flex;gap:6px;margin:14px 0 16px;background:var(--panel);padding:5px;border-radius:var(--radius);border:1px solid var(--line)}
+.tabs button{
+  flex:1;appearance:none;border:0;border-radius:7px;background:transparent;color:var(--ink-dim);
+  font:600 15px/1 inherit;padding:12px 8px;cursor:pointer;
+}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+
+/* results */
+.results{
+  position:sticky;top:0;z-index:5;background:var(--bg);
+  padding:8px 0 10px;margin:0 0 4px;
+}
+.odds{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.odd{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:11px 8px;
+  text-align:center;display:flex;flex-direction:column;justify-content:space-between}
+.odd .v{font:700 25px/1.1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:-.5px}
+.odd .k{font-size:11px;color:var(--ink-dim);margin-top:5px;text-transform:uppercase;letter-spacing:.5px}
+.odd.flesh .v{color:var(--flesh)} .odd.serious .v{color:var(--serious)} .odd.ooa .v{color:var(--ooa)}
+.bar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:8px;background:var(--panel-2)}
+.bar i{display:block;height:100%}
+.minor{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:12.5px;color:var(--ink-dim)}
+.minor b{color:var(--ink);font-weight:600;font-family:ui-monospace,Menlo,monospace}
+.warn,.info{margin-top:9px;font-size:12.5px;border-radius:8px;padding:8px 10px}
+.warn{color:var(--accent);background:rgba(224,164,88,.09);border:1px solid rgba(224,164,88,.32)}
+.info{color:var(--ink-dim);background:var(--panel);border:1px solid var(--line)}
+.warn p,.info p{margin:0 0 4px} .warn p:last-child,.info p:last-child{margin:0}
+.info b{color:var(--ink)}
+.profile{grid-column:1/-1;margin:2px 0 0;font-size:12.5px;color:var(--ink-dim);
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5}
+.profile b{color:var(--ink);font-family:inherit}
+
+/* form */
+fieldset{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);margin:0 0 var(--gap);padding:6px 12px 12px}
+legend{font:600 12px/1 inherit;text-transform:uppercase;letter-spacing:.8px;color:var(--accent);padding:0 6px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:10px}
+.f{display:flex;flex-direction:column;gap:4px;min-width:0}
+.f label{font-size:12px;color:var(--ink-dim)}
+.f select,.f input[type=text]{
+  appearance:none;width:100%;background:var(--panel-2);color:var(--ink);
+  border:1px solid var(--line);border-radius:8px;padding:10px 26px 10px 10px;font:15px/1.2 inherit;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23a0a4bb'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center;
+}
+.f select:focus-visible,.tabs button:focus-visible,.chk:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.f.wide{grid-column:1/-1}
+.chks{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px}
+.chk{display:inline-flex;align-items:center;gap:7px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:20px;padding:8px 13px 8px 10px;font-size:13.5px;cursor:pointer;color:var(--ink-dim)}
+.chk input{accent-color:var(--accent);margin:0;width:16px;height:16px}
+.chk:has(input:checked){border-color:var(--accent);color:var(--ink)}
+.chk.wide{flex:1 1 100%;border-radius:8px}
+details{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);margin:0 0 var(--gap);padding:0}
+details>summary{padding:12px;font:600 13px/1 inherit;color:var(--ink-dim);cursor:pointer;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"▸ ";color:var(--accent)}
+details[open]>summary::before{content:"▾ "}
+details .body{padding:0 12px 12px}
+details p{margin:0 0 8px;font-size:13px;color:var(--ink-dim)}
+details code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px}
+.note{font-size:12px;color:var(--ink-faint);margin:6px 0 0}
+.hidden{display:none !important}
+footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px 0;line-height:1.6}
+@media (max-width:380px){ .odd .v{font-size:21px} }
+@media (prefers-reduced-motion:no-preference){ .bar i{transition:width .15s ease} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Necromunda Attack Simulator</h1>
+  <p class="sub">Exact odds for one attacker, one weapon, one target, one activation. No dice are rolled.</p>
+</header>
+
+<div class="tabs" role="tablist">
+  <button role="tab" id="tab-ranged" aria-controls="panel-ranged" aria-selected="true">Ranged</button>
+  <button role="tab" id="tab-melee" aria-controls="panel-melee" aria-selected="false">Melee</button>
+</div>
+
+<section id="panel-ranged" role="tabpanel" aria-labelledby="tab-ranged"></section>
+<section id="panel-melee" role="tabpanel" aria-labelledby="tab-melee" class="hidden"></section>
+
+<footer>
+  Unofficial fan-made tool. Necromunda is a trademark of Games Workshop Ltd.<br>
+  Works offline — no network, no storage, no accounts.
+</footer>
+</div>
+
+<script id="engine">
+/* ==========================================================================
+   ENGINE — exact probabilities, no sampling.
+   Pure functions, no DOM access. Page references are to the N26 core rules.
+   ========================================================================== */
+const Engine = (function () {
+  'use strict';
+
+  /* Target condition ladder (p77). A model on 0 Wounds is automatically
+     Injured; Serious Injury and Out of Action escalate from there. */
+  const NONE = 0, INJURED = 1, SERIOUS = 2, OOA = 3;
+
+  /* A target state packs into one integer: wounds, condition, webbed, blind.
+     Webbed (p165) and Blind (p162) never affect later damage maths, but they
+     are outcomes worth reporting, so they ride along as flags. */
+  const enc = (w, cond, web, blind) => (((w << 2) | cond) << 2) | (web ? 2 : 0) | (blind ? 1 : 0);
+  const dec = (id) => ({ w: id >> 4, cond: (id >> 2) & 3, web: !!(id & 2), blind: !!(id & 1) });
+
+  function addTo(map, id, p) {
+    if (p > 0) map.set(id, (map.get(id) || 0) + p);
+  }
+
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+  /* ---- Wound roll (p76) ------------------------------------------------ */
+  function woundTarget(S, T) {
+    if (S >= 2 * T) return 2;   // Str twice T or greater
+    if (S > T) return 3;        // Str greater than T
+    if (S === T) return 4;      // Str equal to T
+    if (2 * S <= T) return 6;   // Str half T or lower
+    return 5;                   // Str lower than T
+  }
+
+  /* ---- Save roll (p76) -------------------------------------------------
+     Only one save per hit, so the model takes whichever is better. AP, cover
+     and characteristic bumps all fold into `mods` (positive = better save).
+     Invulnerable saves ignore modifiers. A natural 1 or 2 always fails. */
+  function saveProb(sv, mods, inv, allowArmour) {
+    let best = 0;
+    if (allowArmour && sv) {
+      const need = Math.max(3, sv - mods);
+      if (need <= 6) best = Math.max(best, (7 - need) / 6);
+    }
+    if (inv) {
+      const need = Math.max(3, inv);
+      if (need <= 6) best = Math.max(best, (7 - need) / 6);
+    }
+    return best;
+  }
+
+  /* ---- Injury dice (p77) -----------------------------------------------
+     The attacker rolls Lethality dice and selects one, so they take the best
+     available result: Out of Action, else Serious Injury, else Injured.
+     Lethality 0 means no dice — the target is simply Injured at 0 Wounds. */
+  function injuryPick(L, faces) {
+    if (L <= 0) return { ooa: 0, si: 0, inj: 1 };
+    const notOoa = Math.pow((faces.si + faces.inj) / 6, L);
+    const onlyInj = Math.pow(faces.inj / 6, L);
+    return { ooa: 1 - notOoa, si: notOoa - onlyInj, inj: onlyInj };
+  }
+
+  /* An unsaved wound costs the target `damage` Wounds (Damage (X), p162). */
+  function applyDamage(id, damage, L, faces, out, p) {
+    const s = dec(id);
+    const nw = Math.max(0, s.w - damage);
+    if (nw > 0) { addTo(out, enc(nw, s.cond, s.web, s.blind), p); return; }
+    const pick = injuryPick(L, faces);
+    addTo(out, enc(0, OOA, s.web, s.blind), p * pick.ooa);
+    // 'Serious Injury' has no effect on a model that is already Seriously Injured.
+    addTo(out, enc(0, Math.max(s.cond, SERIOUS), s.web, s.blind), p * pick.si);
+    addTo(out, enc(0, Math.max(s.cond, INJURED), s.web, s.blind), p * pick.inj);
+  }
+
+  /* ---- One hit, from wound roll to injury dice --------------------------
+     Returns a list of weighted effects. Effects are independent of the
+     target's current state, so this is computed once and reused. */
+  function hitEffects(ctx, autoWound) {
+    const w = ctx.weapon, t = ctx.target, eff = [];
+
+    // Flash (p162): no wound roll at all, just an Initiative check.
+    if (w.flash) {
+      const pBlind = clamp01((6 - t.initiative) / 6);
+      eff.push({ p: pBlind, wounded: false, blind: true });
+      eff.push({ p: 1 - pBlind, wounded: false });
+      return eff;
+    }
+
+    // Graviton Pulse (p163): Strength check instead of a wound roll, no armour save.
+    if (w.graviton) {
+      const pFail = clamp01((6 - t.strength) / 6);
+      const pSave = saveProb(0, 0, t.inv, false);
+      eff.push({ p: pFail * (1 - pSave), wounded: true, damage: w.damage, L: w.lethality });
+      eff.push({ p: pFail * pSave, wounded: false });
+      eff.push({ p: 1 - pFail, wounded: false });
+      return eff;
+    }
+
+    // Shock (p164) counts as a natural 6 on the wound roll for other traits.
+    const rolls = autoWound ? [{ face: 6, p: 1 }] : [1, 2, 3, 4, 5, 6].map(f => ({ face: f, p: 1 / 6 }));
+
+    for (const r of rolls) {
+      const wounds = autoWound || r.face >= ctx.woundTarget;
+      // Blaze (p162) triggers off the wound roll even if the hit failed to wound.
+      const blaze = w.blaze > 0 && r.face >= w.blaze;
+      if (!wounds) { eff.push({ p: r.p, wounded: false, blaze: blaze }); continue; }
+
+      const rending   = w.rending   > 0 && r.face >= w.rending;    // AP improved by 1
+      const shred     = w.shred     > 0 && r.face >= w.shred;      // Lethality +1
+      const breaching = w.breaching > 0 && r.face >= w.breaching;  // no armour saves
+
+      const allowArmour = !w.gas && !w.web && !breaching;
+      let inv = t.inv;
+      if (w.gas && t.respirator) inv = inv ? Math.min(inv, 5) : 5;  // respirator, p163
+      const pSave = saveProb(t.sv, w.ap + (rending ? -1 : 0) + t.saveMods, inv, allowArmour);
+
+      if (w.web) {  // Web (p165): the target is Webbed instead of losing a Wound.
+        eff.push({ p: r.p * (1 - pSave), wounded: false, web: true, blaze: blaze });
+      } else {
+        eff.push({ p: r.p * (1 - pSave), wounded: true, damage: w.damage,
+                   L: w.lethality + (shred ? 1 : 0), blaze: blaze });
+      }
+      eff.push({ p: r.p * pSave, wounded: false, blaze: blaze });
+    }
+    return eff;
+  }
+
+  /* Push a whole state distribution through one hit. */
+  function applyHit(dist, ctx, effects, allowBlaze) {
+    const out = new Map();
+    for (const [id, p0] of dist) {
+      if (((id >> 2) & 3) === OOA) { addTo(out, id, p0); continue; }  // already gone
+      const s = dec(id);
+      for (const e of effects) {
+        const p = p0 * e.p;
+        if (p <= 0) continue;
+        let sub;
+        if (e.wounded) {
+          sub = new Map();
+          applyDamage(id, e.damage, e.L, ctx.faces, sub, 1);
+        } else {
+          sub = new Map([[enc(s.w, s.cond, s.web || !!e.web, s.blind || !!e.blind), 1]]);
+        }
+        // Blaze: one additional hit with the same profile, which cannot chain.
+        if (e.blaze && allowBlaze) sub = applyHit(sub, ctx, ctx.effects, false);
+        for (const [k, q] of sub) addTo(out, k, p * q);
+      }
+    }
+    return out;
+  }
+
+  /* ---- Firepower dice (p72) --------------------------------------------
+     Four faces: one hole, two holes, three holes, one hole + ammo symbol.
+     Hits equal the total bullet holes across the dice rolled. */
+  function firepowerDist(n) {
+    let dist = new Map([[0, 1]]);
+    for (let i = 0; i < n; i++) {
+      const next = new Map();
+      for (const [total, p] of dist) {
+        addTo(next, total + 1, p * 0.5);   // single, and single+ammo
+        addTo(next, total + 2, p * 0.25);
+        addTo(next, total + 3, p * 0.25);
+      }
+      dist = next;
+    }
+    return dist;
+  }
+
+  /* Hit roll (p72 / p74). Natural 1 always misses, natural 6 always hits. */
+  const isHit = (face, skill, mod) => face === 6 || (face !== 1 && face + mod >= skill);
+
+  /* ---- Context assembly ------------------------------------------------ */
+  function startState(t) {
+    if (t.status === 'seriously') return enc(0, SERIOUS, false, false);
+    if (t.status === 'injured') return enc(0, INJURED, false, false);
+    return enc(t.W, NONE, false, false);
+  }
+
+  function buildCtx(input) {
+    const w = input.weapon, t = input.target;
+    const problems = [];
+
+    let wt;
+    if (w.toxin > 0) {
+      // Toxin (p165): wounds a Fighter on X+, a Vehicle only on a natural 6.
+      wt = t.isVehicle ? 6 : w.toxin;
+    } else if (w.str === null) {
+      wt = 7;  // Strength '-' with no trait to resolve it: the hit does nothing.
+      problems.push('This profile has no Strength and no trait that replaces the wound roll, so no wound is possible. Set a Strength, or pick Toxin / Graviton Pulse / Flash / Web.');
+    } else {
+      wt = woundTarget(w.str, t.T);
+    }
+
+    const ctx = {
+      weapon: w, target: t, faces: input.faces, woundTarget: wt,
+      problems: problems
+    };
+    ctx.effects = hitEffects(ctx, false);
+    ctx.shockEffects = hitEffects(ctx, true);
+    return ctx;
+  }
+
+  /* ---- Ranged attack (p72) ---------------------------------------------
+     One hit roll for the whole attack; Rapid Fire turns that single success
+     into several hits, all of which share the hit roll's trait triggers. */
+  function computeRanged(input) {
+    const ctx = buildCtx(input);
+    const w = input.weapon, t = input.target;
+    const start = startState(t);
+    const fp = firepowerDist(w.rapidFire > 0 ? w.rapidFire : 0);
+    const singleHit = new Map([[1, 1]]);
+    const hitCounts = w.rapidFire > 0 ? fp : singleHit;
+
+    // -1 to hit a Seriously Injured target (p72).
+    const mod = input.hitMod + (t.status === 'seriously' ? -1 : 0);
+
+    const branches = w.autoHit
+      ? [{ p: 1, hit: true, shock: false }]
+      : [1, 2, 3, 4, 5, 6].map(f => ({
+          p: 1 / 6,
+          hit: isHit(f, input.skill, mod),
+          shock: w.shock > 0 && f >= w.shock
+        }));
+
+    let out = new Map();
+    let pHit = 0;
+    for (const b of branches) {
+      if (!b.hit) { addTo(out, start, b.p); continue; }
+      pHit += b.p;
+      const effects = b.shock ? ctx.shockEffects : ctx.effects;
+      for (const [n, pn] of hitCounts) {
+        let dist = new Map([[start, 1]]);
+        for (let i = 0; i < n; i++) dist = applyHit(dist, ctx, effects, true);
+        for (const [k, q] of dist) addTo(out, k, b.p * pn * q);
+      }
+    }
+
+    let expectedHits = 0;
+    for (const [n, pn] of hitCounts) expectedHits += n * pn;
+    return summarise(out, start, { ctx: ctx, pHit: pHit, expectedHits: pHit * expectedHits });
+  }
+
+  /* ---- Melee attack (p74) ----------------------------------------------
+     Every Attack dice is its own Weapon Skill test, and hits are resolved
+     in sequence, so the target's state carries from one attack to the next. */
+  function computeMelee(input) {
+    const start = startState(input.target);
+    let dist = new Map([[start, 1]]);
+    let pAnyHit = 0, expectedHits = 0;
+    const problems = [];
+    let firstCtx = null;
+
+    for (const weaponInput of input.weapons) {
+      const ctx = buildCtx({ weapon: weaponInput.weapon, target: input.target, faces: input.faces });
+      if (!firstCtx) firstCtx = ctx;
+      for (const p of ctx.problems) if (problems.indexOf(p) < 0) problems.push(p);
+      const w = weaponInput.weapon;
+      let pMissAll = 1;
+      for (let a = 0; a < weaponInput.attacks; a++) {
+        if (w.autoHit) {
+          dist = applyHit(dist, ctx, ctx.effects, true);
+          pMissAll = 0; expectedHits += 1;
+          continue;
+        }
+        const out = new Map();
+        let pThis = 0;
+        for (let f = 1; f <= 6; f++) {
+          const p = 1 / 6;
+          if (!isHit(f, weaponInput.skill, weaponInput.hitMod)) {
+            for (const [k, q] of dist) addTo(out, k, p * q);
+            continue;
+          }
+          pThis += p;
+          const effects = (w.shock > 0 && f >= w.shock) ? ctx.shockEffects : ctx.effects;
+          const sub = applyHit(dist, ctx, effects, true);
+          for (const [k, q] of sub) addTo(out, k, p * q);
+        }
+        pMissAll *= (1 - pThis);
+        expectedHits += pThis;
+        dist = out;
+      }
+      pAnyHit = 1 - (1 - pAnyHit) * pMissAll;
+    }
+
+    firstCtx.problems = problems;
+    return summarise(dist, start, { ctx: firstCtx, pHit: pAnyHit, expectedHits: expectedHits });
+  }
+
+  /* ---- Reporting -------------------------------------------------------- */
+  function summarise(dist, startId, extra) {
+    const s0 = dec(startId);
+    const r = { fleshWound: 0, serious: 0, outOfAction: 0, wounded: 0, unharmed: 0,
+                webbed: 0, blinded: 0, expectedWoundsLost: 0, total: 0 };
+    for (const [id, p] of dist) {
+      const s = dec(id);
+      r.total += p;
+      if (s.web) r.webbed += p;
+      if (s.blind) r.blinded += p;
+      r.expectedWoundsLost += (s0.w - s.w) * p;
+      if (s.cond === OOA) r.outOfAction += p;
+      else if (s.cond === SERIOUS) r.serious += p;
+      else if (s.cond === INJURED) r.fleshWound += p;
+      else if (s.w < s0.w) r.wounded += p;
+      else r.unharmed += p;
+    }
+    r.changed = 1 - probOf(dist, startId);
+    r.pHit = extra.pHit;
+    r.expectedHits = extra.expectedHits;
+    r.problems = extra.ctx.problems;
+    r.woundTarget = extra.ctx.woundTarget;
+    r.perHit = perHitBreakdown(extra.ctx);
+    r.startsInjured = s0.cond >= INJURED;
+    r.startCond = s0.cond;
+    return r;
+  }
+
+  function probOf(dist, id) { return dist.get(id) || 0; }
+
+  /* Chance that a single hit wounds, and that a wound goes unsaved. */
+  function perHitBreakdown(ctx) {
+    let pWound = 0, pUnsaved = 0;
+    for (const e of ctx.effects) {
+      if (e.wounded || e.web) pUnsaved += e.p;
+    }
+    if (ctx.weapon.flash) return { pWound: 0, pUnsaved: 0 };
+    if (ctx.weapon.graviton) {
+      pWound = Math.max(0, Math.min(1, (6 - ctx.target.strength) / 6));
+      return { pWound: pWound, pUnsaved: pUnsaved };
+    }
+    pWound = ctx.woundTarget > 6 ? 0 : (7 - ctx.woundTarget) / 6;
+    return { pWound: pWound, pUnsaved: pUnsaved };
+  }
+
+  return {
+    computeRanged: computeRanged, computeMelee: computeMelee,
+    woundTarget: woundTarget, saveProb: saveProb, injuryPick: injuryPick,
+    firepowerDist: firepowerDist, isHit: isHit,
+    COND: { NONE: NONE, INJURED: INJURED, SERIOUS: SERIOUS, OOA: OOA }
+  };
+})();
+if (typeof module !== 'undefined') module.exports = Engine;
+</script>
+
+<script id="data">
+/* ==========================================================================
+   DATA — Trading Post profiles (p154-157) and the one worked fighter profile
+   printed in the core rules (p50). Picking one of these only fills the
+   dropdowns in; every field stays editable afterwards.
+   ========================================================================== */
+const Data = (function () {
+  'use strict';
+
+  /* Traits are kept as the book prints them and parsed into engine flags, so
+     the table below can be checked against p154-157 line by line. */
+  function parseTraits(str) {
+    const t = {
+      rapidFire: 0, toxin: 0, rending: 0, shred: 0, breaching: 0, shock: 0, blaze: 0,
+      damage: 1, paired: 0, gas: false, web: false, flash: false, graviton: false,
+      autoHit: false, light: false, melee: false, unwieldy: false, parry: false,
+      unstable: false, heavy: false, blast: false, smoke: false
+    };
+    if (!str) return t;
+    const num = (re) => { const m = str.match(re); return m ? parseInt(m[1], 10) : 0; };
+    t.rapidFire = num(/Rapid Fire \((\d)\)/);
+    t.toxin     = num(/Toxin \((\d)\+\)/);
+    t.rending   = num(/Rending \((\d)\+\)/);
+    t.shred     = num(/Shred \((\d)\+\)/);
+    t.breaching = num(/Breaching \((\d)\+\)/);
+    t.shock     = num(/Shock \((\d)\+\)/);
+    t.blaze     = num(/Blaze \((\d)\+\)/);
+    t.paired    = num(/Paired \((\d)\)/);
+    t.damage    = num(/Damage \((\d)\)/) || 1;
+    t.gas       = /\bGas\b/.test(str);
+    t.web       = /\bWeb\b/.test(str);
+    t.flash     = /\bFlash\b/.test(str);
+    t.graviton  = /Graviton Pulse/.test(str);
+    t.autoHit   = /\bTemplate\b/.test(str);   // Template weapons hit automatically (p165)
+    t.light     = /\bLight\b/.test(str);
+    t.melee     = /\bMelee\b/.test(str);
+    t.unwieldy  = /\bUnwieldy\b/.test(str);
+    t.parry     = /\bParry\b/.test(str);
+    t.unstable  = /\bUnstable\b/.test(str);
+    t.heavy     = /\bHeavy\b/.test(str);
+    t.blast     = /\bBlast\b/.test(str);
+    t.smoke     = /\bSmoke\b/.test(str);
+    return t;
+  }
+
+  /* [name, category, short range, long range, Str, AP, Lethality, traits]
+     Str: a number, 'S'/'S+1'/'S+2'/'S+3' for the wielder's Strength, or null.
+     Lethality: null where the book prints '-' and traits resolve the hit. */
+  const RANGED = [
+    ['Autogun',              'Auto & stub', '8"', '24"',  3,  0, 1, 'Rapid Fire (1)'],
+    ['Autopistol',           'Auto & stub', '4"', '12"',  3,  0, 1, 'Light, Rapid Fire (1)'],
+    ['Heavy stubber',        'Auto & stub', '20"','40"',  4, -1, 1, 'Heavy, Rapid Fire (2)'],
+    ['Long rifle',           'Auto & stub', '24"','48"',  4, -1, 1, 'Knockback (6+)'],
+    ['Stub gun',             'Auto & stub', '6"', '12"',  3,  0, 1, 'Light'],
+    ['Boltgun',              'Bolt',        '12"','24"',  4, -1, 2, 'Ammo (3+), Rapid Fire (1)'],
+    ['Bolt pistol',          'Bolt',        '6"', '12"',  4, -1, 2, 'Ammo (3+), Light, Rapid Fire (1)'],
+    ['Heavy bolter',         'Bolt',        '18"','36"',  5, -2, 2, 'Ammo (3+), Heavy, Rapid Fire (2)'],
+    ['Warpstorm bolter',     'Bolt',        '12"','24"',  4, -1, 2, 'Ammo (6+), Cursed, Rapid Fire (1), Scarce (4+)'],
+    ['Flamer',               'Flamer',      'T',  '-',    4, -1, 1, 'Ammo (6+), Blaze (5+), Template'],
+    ['Hand flamer',          'Flamer',      'T',  '-',    3,  0, 1, 'Ammo (6+), Blaze (5+), Light, Template'],
+    ['Heavy flamer',         'Flamer',      'T',  '-',    5, -2, 1, 'Ammo (6+), Blaze (5+), Template'],
+    ['Grav gun',             'Grav',        '9"', '18"',  null, 0, 2, 'Ammo (5+), Blast (3"), Graviton Pulse'],
+    ['Grav pistol',          'Grav',        '4"', '9"',   null, 0, 2, 'Ammo (5+), Blast (3"), Graviton Pulse'],
+    ['Grenade launcher - frag',          'Grenade launcher', '6"', '24"', 3,  0, 1, 'Ammo (4+), Blast (3"), Knockback (5+)'],
+    ['Grenade launcher - krak',          'Grenade launcher', '6"', '24"', 6, -2, 1, 'Ammo (4+)'],
+    ['Grenade launcher - photon flash',  'Grenade launcher', '6"', '24"', null, 0, null, 'Ammo (5+), Blast (3"), Flash'],
+    ['Grenade launcher - smoke',         'Grenade launcher', '6"', '24"', null, 0, null, 'Ammo (4+), Blast (3"), Smoke'],
+    ['Lasgun',               'Las',         '16"','24"',  3,  0, 1, ''],
+    ['Laspistol',            'Las',         '8"', '12"',  3,  0, 1, 'Light'],
+    ['Long las',             'Las',         '18"','36"',  4,  0, 1, ''],
+    ['Meltagun',             'Melta',       '6"', '12"',  8, -4, 3, 'Ammo (6+), Damage (3)'],
+    ['Multi-melta',          'Melta',       '12"','24"',  8, -4, 3, 'Ammo (6+), Damage (3), Heavy'],
+    ['Plasma cannon',        'Plasma',      '18"','36"',  6, -2, 2, 'Ammo (6+), Blast (3"), Damage (2), Heavy, Unstable'],
+    ['Plasma gun',           'Plasma',      '12"','24"',  5, -2, 2, 'Ammo (6+), Damage (2), Rapid Fire (1), Unstable'],
+    ['Plasma pistol',        'Plasma',      '6"', '12"',  5, -2, 2, 'Ammo (6+), Damage (2), Light, Unstable'],
+    ['Throwing knives',      'Primitive & tools', '6"', '12"', null, 0, 1, 'Ammo (3+), Toxin (4+)'],
+    ['Rad cannon',           'Primitive & tools', '16"','32"', 3, -1, 1, 'Ammo (4+), Blast (3"), Heavy, Rad-phage'],
+    ['Rad gun',              'Primitive & tools', 'T',  '-',   3, -1, 1, 'Ammo (5+), Rad-phage, Template'],
+    ['Harpoon launcher',     'Primitive & tools', '6"', '18"', 5, -3, 1, 'Ammo (5+), Drag'],
+    ['Las cutter',           'Primitive & tools', '2"', '4"',  9, -2, 2, 'Damage (2), Light, Single Shot'],
+    ['Mining laser',         'Primitive & tools', '10"','14"', 9, -3, 3, 'Ammo (5+), Damage (2), Heavy'],
+    ['Combat shotgun - salvo ammo',     'Shotgun', '4"', '12"', 4, 0, 1, 'Knockback (6+)'],
+    ['Combat shotgun - shredder ammo',  'Shotgun', 'T',  '-',   3, 0, 1, 'Ammo (6+), Rapid Fire (1), Shred (6+), Template'],
+    ['Sawn-off shotgun - scatter shot', 'Shotgun', '4"', '8"',  2, 0, 1, 'Light, Rapid Fire (2)'],
+    ['Sawn-off shotgun - solid shot',   'Shotgun', '4"', '8"',  4, 0, 1, 'Light, Knockback (6+)'],
+    ['Shotgun - scatter ammo',          'Shotgun', '4"', '8"',  3, 0, 1, 'Rapid Fire (2)'],
+    ['Shotgun - solid ammo',            'Shotgun', '8"', '16"', 4, 0, 1, 'Knockback (5+)'],
+    ['Needle pistol',        'Toxin & web', '4"', '9"',  null,  0, 1, 'Light, Toxin (3+)'],
+    ['Needle rifle',         'Toxin & web', '9"', '18"', null, -1, 1, 'Toxin (3+)'],
+    ['Web gun',              'Toxin & web', 'T',  '-',   5,  0, null, 'Ammo (6+), Template, Web'],
+    ['Web pistol',           'Toxin & web', 'T',  '-',   4,  0, null, 'Ammo (6+), Light, Template, Web'],
+    ['Blasting charges',     'Grenades', '-', '6"',  5, -1, 2, 'Ammo (5+), Blast (5"), Knockback (5+), Limited'],
+    ['Choke gas grenades',   'Grenades', '-', '9"',  null, 0, 1, 'Ammo (5+), Blast (3"), Gas, Limited, Toxin (3+)'],
+    ['Demo charges',         'Grenades', '-', '6"',  6, -3, 3, 'Ammo (6+), Blast (5"), Damage (2), Limited'],
+    ['Frag grenades',        'Grenades', '-', '9"',  3,  0, 1, 'Ammo (4+), Blast (3"), Knockback (6+), Limited'],
+    ['Incendiary charges',   'Grenades', '-', '9"',  3,  0, 1, 'Ammo (5+), Blast (5"), Blaze (5+), Limited'],
+    ['Krak grenades',        'Grenades', '-', '9"',  6, -2, 1, 'Ammo (4+), Limited'],
+    ['Phosphor canisters',   'Grenades', '-', '9"',  4, -2, 2, 'Ammo (5+), Blast (3"), Blaze (5+), Limited, Unstable'],
+    ['Photon flash grenades','Grenades', '-', '9"',  null, 0, null, 'Ammo (4+), Blast (5"), Flash, Limited'],
+    ['Plasma grenades',      'Grenades', '-', '9"',  5, -1, 2, 'Ammo (4+), Blast (3"), Damage (2), Limited, Unstable'],
+    ['Rad grenades',         'Grenades', '-', '9"',  2, -1, 1, 'Ammo (4+), Blast (3"), Limited, Rad-phage'],
+    ['Smoke grenades',       'Grenades', '-', '9"',  null, 0, null, 'Ammo (4+), Blast (3"), Limited, Smoke']
+  ];
+
+  const MELEE = [
+    ['Hand weapon',        'Unarmed',        'E', '-', 'S',    0, 1, 'Melee'],
+    ['Chainaxe',           'Chain & power',  'E', '-', 'S',   -1, 1, 'Melee, Shred (5+)'],
+    ['Chainsword',         'Chain & power',  'E', '-', 'S',    0, 1, 'Melee, Parry, Shred (5+)'],
+    ['Power axe',          'Chain & power',  'E', '-', 'S',   -3, 1, 'Breaching (5+), Melee'],
+    ['Power fist',         'Chain & power',  'E', '-', 'S+3', -3, 2, 'Breaching (6+), Concussive (5+), Damage (2), Melee, Unwieldy'],
+    ['Power hammer',       'Chain & power',  'E', '-', 'S',   -2, 2, 'Breaching (6+), Concussive (6+), Melee'],
+    ['Power knife',        'Chain & power',  'E', '-', 'S',   -2, 1, 'Backstab, Breaching (6+), Melee'],
+    ['Power maul',         'Chain & power',  'E', '-', 'S+1', -2, 1, 'Breaching (6+), Concussive (6+), Melee'],
+    ['Power sword',        'Chain & power',  'E', '-', 'S',   -2, 1, 'Breaching (6+), Melee, Parry'],
+    ['Axe',                'Primitive',      'E', '-', 'S',   -1, 1, 'Melee'],
+    ['Fighting knife',     'Primitive',      'E', '-', 'S',    0, 1, 'Backstab, Melee'],
+    ['Flail',              'Primitive',      'E', '-', 'S',    0, 1, 'Knockback (6+), Melee'],
+    ['Maul',               'Primitive',      'E', '-', 'S+1',  0, 1, 'Concussive (6+), Melee'],
+    ['Two-handed axe',     'Primitive',      'E', '-', 'S+1', -1, 2, 'Heavy, Melee, Unwieldy'],
+    ['Two-handed hammer',  'Primitive',      'E', '-', 'S+1',  0, 3, 'Concussive (6+), Heavy, Melee, Unwieldy'],
+    ['Servo-claw',         'Tools',          'E', '-', 'S+2',  0, 2, 'Melee, Unwieldy'],
+    ['Shock baton',        'Shock & toxin',  'E', '-', 'S',    0, 1, 'Melee, Parry, Shock (6+)'],
+    ['Shock stave',        'Shock & toxin',  'E', '-', 'S+1',  0, 1, 'Melee, Shock (5+)'],
+    ['Shock whip',         'Shock & toxin',  'E', '-', 'S',    0, 1, 'Knockback (6+), Melee, Shock (6+)'],
+    ['Stiletto knife',     'Shock & toxin',  'E', '-', null,   0, 1, 'Melee, Toxin (3+)'],
+    ['Stiletto sword',     'Shock & toxin',  'E', '-', null,  -1, 1, 'Melee, Parry, Toxin (3+)']
+  ];
+
+  function toProfile(row) {
+    return {
+      name: row[0], cat: row[1], sr: row[2], lr: row[3],
+      str: row[4], ap: row[5], lethality: row[6], traitText: row[7],
+      traits: parseTraits(row[7])
+    };
+  }
+
+  const ranged = RANGED.map(toProfile);
+  const melee = MELEE.map(toProfile);
+  /* Pistols keep the Light trait, so they can be swung in close combat (p74). */
+  const meleeUsable = melee.concat(ranged.filter(p => p.traits.light));
+
+  /* Fighter profiles. The core rules print exactly one full profile (p50);
+     the rest are rounded archetypes for quick setup, not book entries. */
+  const FIGHTERS = [
+    { name: 'Escher Gang Sister (core rules example, p50)', book: true,
+      ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
+    { name: 'Ganger', ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
+    { name: 'Champion', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 5 },
+    { name: 'Leader', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 4 },
+    { name: 'Juve', ws: 5, bs: 5, S: 3, T: 3, W: 1, I: 3, A: 1, sv: 0 },
+    { name: 'Brute', ws: 4, bs: 5, S: 4, T: 4, W: 3, I: 4, A: 2, sv: 4 },
+    { name: 'Vehicle', ws: 6, bs: 4, S: 5, T: 5, W: 4, I: 3, A: 1, sv: 4, vehicle: true }
+  ];
+
+  return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits };
+})();
+if (typeof module !== 'undefined') module.exports = Data;
+</script>
+
+<script id="ui">
+/* ==========================================================================
+   UI — builds both calculators from a field spec, recomputes on every change.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  /* ---- tiny DOM helpers ------------------------------------------------ */
+  function el(tag, attrs) {
+    const n = document.createElement(tag);
+    for (const k in (attrs || {})) {
+      if (k === 'class') n.className = attrs[k];
+      else if (k === 'text') n.textContent = attrs[k];
+      else if (k === 'html') n.innerHTML = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    for (let i = 2; i < arguments.length; i++) {
+      const c = arguments[i];
+      if (c == null) continue;
+      n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return n;
+  }
+
+  /* opts: array of [value, label] or ['group', name, [[value,label],...]] */
+  function field(label, bind, opts, value, hint) {
+    const sel = el('select', { 'data-bind': bind, id: 'f-' + bind.replace(/\./g, '-') });
+    (function add(list, parent) {
+      for (const o of list) {
+        if (o[0] === 'group') {
+          const g = el('optgroup', { label: o[1] });
+          add(o[2], g);
+          parent.appendChild(g);
+        } else {
+          const op = el('option', { value: String(o[0]), text: o[1] });
+          if (String(o[0]) === String(value)) op.selected = true;
+          parent.appendChild(op);
+        }
+      }
+    })(opts, sel);
+    const wrap = el('div', { class: 'f' }, el('label', { for: sel.id, text: label }), sel);
+    if (hint) wrap.appendChild(el('p', { class: 'note', text: hint }));
+    return wrap;
+  }
+
+  function chip(label, bind, checked) {
+    const box = el('input', { type: 'checkbox', 'data-bind': bind });
+    box.checked = !!checked;
+    return el('label', { class: 'chk' }, box, el('span', { text: label }));
+  }
+
+  function group(legend) {
+    const fs = el('fieldset', {}, el('legend', { text: legend }));
+    const g = el('div', { class: 'grid' });
+    fs.appendChild(g);
+    for (let i = 1; i < arguments.length; i++) if (arguments[i]) g.appendChild(arguments[i]);
+    return fs;
+  }
+
+  function chipRow() {
+    const row = el('div', { class: 'chks' });
+    for (let i = 0; i < arguments.length; i++) if (arguments[i]) row.appendChild(arguments[i]);
+    return el('div', { class: 'f wide' }, row);
+  }
+
+  /* ---- option lists ---------------------------------------------------- */
+  const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; };
+  const SKILL = range(2, 6).map(n => [n, n + '+']);
+  const MODS = range(-3, 3).map(n => [n, n > 0 ? '+' + n : String(n)]);
+  const SAVE_MODS = range(-2, 2).map(n => [n, n > 0 ? '+' + n : String(n)]);
+  const STR = [[0, '- (none)']].concat(range(1, 10).map(n => [n, String(n)]));
+  const AP = [[1, '+1'], [0, '- (none)']].concat(range(1, 6).map(n => [-n, '-' + n]));
+  const LETH = [[0, '- (traits resolve)']].concat(range(1, 4).map(n => [n, String(n)]));
+  const DMG = range(1, 4).map(n => [n, String(n)]);
+  const RF = [[0, 'none']].concat(range(1, 3).map(n => [n, 'Rapid Fire (' + n + ')']));
+  const XPLUS = [[0, 'off']].concat(range(2, 6).map(n => [n, n + '+']));
+  const SAVE = [[0, 'none']].concat(range(2, 6).map(n => [n, n + '+']));
+  const T_OPTS = range(1, 10).map(n => [n, String(n)]);
+  const W_OPTS = range(1, 10).map(n => [n, String(n)]);
+  const ATTACKS = range(1, 6).map(n => [n, String(n)]);
+  const STATUS = [['active', 'Active'], ['injured', 'Injured (0 wounds)'], ['seriously', 'Seriously Injured']];
+  const FACES = [
+    ['1/2/3', '1 Out of Action, 2 Serious, 3 Injured'],
+    ['2/2/2', '2 / 2 / 2'],
+    ['1/1/4', '1 / 1 / 4'],
+    ['2/1/3', '2 / 1 / 3'],
+    ['1/3/2', '1 / 3 / 2']
+  ];
+  const MELEE_STR = [['S', 'S (wielder)'], ['S+1', 'S+1'], ['S+2', 'S+2'], ['S+3', 'S+3'],
+                     [0, '- (none)']].concat(range(1, 10).map(n => [n, String(n)]));
+  const RANGE_BAND = [[0, 'none'], [1, '+1 (within short range)'], [2, '+2 (within long range)']];
+
+  function weaponOpts(list) {
+    const cats = [];
+    for (const p of list) {
+      let c = cats.find(x => x[1] === p.cat);
+      if (!c) { c = ['group', p.cat, []]; cats.push(c); }
+      c[2].push([p.name, p.name]);
+    }
+    return [['', 'Pick a profile...']].concat(cats);
+  }
+  const FIGHTER_OPTS = [['', 'Pick a profile...'],
+    ['group', 'From the core rules', Data.fighters.filter(f => f.book).map(f => [f.name, f.name])],
+    ['group', 'Generic archetypes (not book profiles)', Data.fighters.filter(f => !f.book).map(f => [f.name, f.name])]];
+
+  /* ---- trait bookkeeping ------------------------------------------------
+     Traits the calculator actually uses, so the rest can be named plainly
+     rather than silently dropped. */
+  const MODELLED = ['Rapid Fire', 'Toxin', 'Rending', 'Shred', 'Breaching', 'Shock',
+    'Blaze', 'Gas', 'Web', 'Flash', 'Graviton Pulse', 'Damage', 'Template', 'Light',
+    'Melee', 'Paired'];
+
+  function splitTraits(text) {
+    return (text || '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+  function unmodelled(text) {
+    return splitTraits(text).filter(t => !MODELLED.some(m => t.indexOf(m) === 0));
+  }
+
+  /* ---- panels ----------------------------------------------------------- */
+  const pct = (x) => {
+    if (x <= 0) return '0%';
+    if (x < 0.001) return '<0.1%';
+    if (x > 0.999 && x < 1) return '>99.9%';
+    return (x * 100).toFixed(1) + '%';
+  };
+
+  function resultsBlock() {
+    const mk = (cls, key) => el('div', { class: 'odd ' + cls },
+      el('div', { class: 'v', 'data-out': key, text: '0%' }),
+      el('div', { class: 'k', text: { fleshWound: 'Flesh wound', serious: 'Serious injury', outOfAction: 'Out of action' }[key] }));
+    const bar = el('div', { class: 'bar' });
+    for (const k of ['unharmed', 'wounded', 'fleshWound', 'serious', 'outOfAction']) {
+      bar.appendChild(el('i', { 'data-seg': k, style: 'width:0' }));
+    }
+    return el('div', { class: 'results' },
+      el('div', { class: 'odds' }, mk('flesh', 'fleshWound'), mk('serious', 'serious'), mk('ooa', 'outOfAction')),
+      bar,
+      el('div', { class: 'minor', 'data-minor': '1' }),
+      el('div', { class: 'warn hidden', 'data-warn': '1' }),
+      el('div', { class: 'info hidden', 'data-notes': '1' }));
+  }
+
+  function weaponFields(prefix, melee) {
+    return group(melee ? (prefix === 'w1' ? 'Primary weapon' : 'Secondary weapon') : 'Weapon profile',
+      field('Strength', prefix + '.str', melee ? MELEE_STR : STR, melee ? 'S' : 4),
+      field('Armour Piercing', prefix + '.ap', AP, 0),
+      field('Lethality', prefix + '.lethality', LETH, 1),
+      field('Damage (X)', prefix + '.damage', DMG, 1),
+      melee ? null : field('Rapid Fire (X)', prefix + '.rapidFire', RF, 0),
+      field('Toxin (X+)', prefix + '.toxin', XPLUS, 0),
+      field('Rending (X+)', prefix + '.rending', XPLUS, 0),
+      field('Shred (X+)', prefix + '.shred', XPLUS, 0),
+      field('Breaching (X+)', prefix + '.breaching', XPLUS, 0),
+      field('Shock (X+)', prefix + '.shock', XPLUS, 0),
+      field('Blaze (X+)', prefix + '.blaze', XPLUS, 0),
+      chipRow(
+        chip('Template (hits automatically)', prefix + '.autoHit', false),
+        chip('Gas', prefix + '.gas', false),
+        chip('Web', prefix + '.web', false),
+        chip('Flash', prefix + '.flash', false),
+        chip('Graviton Pulse', prefix + '.graviton', false),
+        melee ? chip('+1 Strength (Backstab / Lance)', prefix + '.strBonus', false) : null,
+        melee ? chip('Light (one attack only)', prefix + '.light', false) : null
+      ));
+  }
+
+  function targetFields(melee) {
+    return group('Target',
+      field('Toughness', 't.T', T_OPTS, 3),
+      field('Wounds remaining', 't.W', W_OPTS, 1),
+      field('Save', 't.sv', SAVE, 6),
+      field('Invulnerable save', 't.inv', SAVE, 0),
+      field('Status', 't.status', STATUS, 'active'),
+      melee ? null : field('Cover / range save modifier', 't.rangeBand', RANGE_BAND, 0),
+      field('Other save modifier', 't.saveOther', SAVE_MODS, 0),
+      field('Initiative (for Flash)', 't.initiative', T_OPTS, 4),
+      field('Strength (for Graviton Pulse)', 't.strength', T_OPTS, 3),
+      chipRow(
+        chip('Vehicle', 't.isVehicle', false),
+        chip('Respirator', 't.respirator', false),
+        melee ? chip('Parry weapon (+1 Sv)', 't.parry', false) : chip('Shield (+1 Sv vs shooting)', 't.shield', false),
+        melee ? chip('Mesh armour (+1 Sv in close combat)', 't.mesh', false) : null
+      ));
+  }
+
+  function assumptionsBlock(extra) {
+    const body = el('div', { class: 'body' });
+    body.appendChild(el('div', { class: 'grid' },
+      field('Injury dice faces', 'faces', FACES, '1/2/3',
+        'The core rules name the three faces (p77) but not how many of each. The first option is the usual spread.')));
+    body.appendChild(el('p', { html:
+      '<b>Flesh wound</b> is the Injury dice result the rules print as <b>Injured</b> (p77): no further damage, ' +
+      'but the model is left on zero Wounds and gains no benefit from its skills.' }));
+    body.appendChild(el('p', { html:
+      'The attacker rolls Lethality Injury dice and <b>selects one</b> (p77), so the best available result is taken. ' +
+      'Save rolls of a natural 1 or 2 always fail (p76). A shot beyond Long Range is an automatic miss (p72) and is ' +
+      'not offered as an input. Rapid Fire assumes the maximum X Firepower dice are rolled.' }));
+    body.appendChild(el('p', { html:
+      'Nothing here is rolled or sampled — every figure is worked out exactly by enumerating the dice.' }));
+    if (extra) body.appendChild(el('p', { html: extra }));
+    body.appendChild(el('p', { html:
+      '<b>Not modelled:</b> Blast scatter, running out of ammo and jams, Knockback, Concussive, Drag, Rad-phage, ' +
+      'Cursed, Reckless, Smoke, Twin-linked, Stray Shots, Target Priority, Nerve checks, Initiative order and ' +
+      'return attacks, skills, and the Lasting Injury table.' }));
+    return el('details', {}, el('summary', { text: 'Assumptions and what is left out' }), body);
+  }
+
+  function buildRanged(root) {
+    root.appendChild(resultsBlock());
+    root.appendChild(group('Load a profile',
+      field('Weapon', 'pick.weapon', weaponOpts(Data.ranged), ''),
+      field('Target', 'pick.fighter', FIGHTER_OPTS, ''),
+      el('p', { class: 'profile', 'data-profile': '1' })));
+    root.appendChild(group('Attacker',
+      field('Ballistic Skill', 'a.skill', SKILL, 4),
+      field('Other hit modifiers', 'a.hitMod', MODS, 0,
+        '-1 for a Seriously Injured target is applied for you.')));
+    root.appendChild(weaponFields('w1', false));
+    root.appendChild(targetFields(false));
+    root.appendChild(assumptionsBlock(
+      'The save modifier for short and long range is transcribed from p76 as printed, where it sits under a ' +
+      'heading of "Cover". A +1 save at short range reads oddly, so check it against your book; the free ' +
+      '"other save modifier" is there if your reading differs.'));
+  }
+
+  function buildMelee(root) {
+    root.appendChild(resultsBlock());
+    root.appendChild(group('Load a profile',
+      field('Primary weapon', 'pick.weapon', weaponOpts(Data.melee), ''),
+      field('Secondary weapon', 'pick.weapon2', weaponOpts(Data.melee), ''),
+      field('Attacker', 'pick.fighter', FIGHTER_OPTS, ''),
+      field('Target', 'pick.fighter2', FIGHTER_OPTS, ''),
+      el('p', { class: 'profile', 'data-profile': '1' })));
+    root.appendChild(group('Attacker',
+      field('Weapon Skill', 'a.skill', SKILL, 4),
+      field('Strength', 'a.S', T_OPTS, 3),
+      field('Attacks', 'a.A', ATTACKS, 1),
+      field('Paired (X)', 'a.paired', [[0, 'off'], [1, '+1'], [2, '+2']], 0),
+      field('Other hit modifiers', 'a.hitMod', MODS, 0),
+      chipRow(
+        chip('Charged (+1 attack)', 'a.charge', false),
+        chip('Reacting, not activating (1 attack)', 'a.reacting', false),
+        chip('Assist (+1 to hit)', 'a.assist', false),
+        chip('Interference (-1 to hit)', 'a.interference', false),
+        chip('Target was out of sight when declared (-1)', 'a.blind', false),
+        chip('Use a secondary weapon (1 extra attack)', 'a.useSecondary', false)
+      )));
+    root.appendChild(weaponFields('w1', true));
+    const second = weaponFields('w2', true);
+    second.setAttribute('data-only', 'secondary');
+    root.appendChild(second);
+    root.appendChild(targetFields(true));
+    root.appendChild(assumptionsBlock(
+      'Attacks are resolved one dice at a time, in order, so the target\'s wounds and condition carry from ' +
+      'one attack to the next. Initiative order is not modelled, so this is the attacker\'s side of the ' +
+      'combat only — it does not ask whether the target strikes back.'));
+  }
+
+  /* ---- state ------------------------------------------------------------ */
+  function readState(root) {
+    const st = {};
+    root.querySelectorAll('[data-bind]').forEach(node => {
+      const path = node.getAttribute('data-bind').split('.');
+      let cur = st;
+      for (let i = 0; i < path.length - 1; i++) cur = (cur[path[i]] = cur[path[i]] || {});
+      let v;
+      if (node.type === 'checkbox') v = node.checked;
+      else { v = node.value; if (/^-?\d+$/.test(v)) v = parseInt(v, 10); }
+      cur[path[path.length - 1]] = v;
+    });
+    return st;
+  }
+
+  function setControl(root, bind, value) {
+    const node = root.querySelector('[data-bind="' + bind + '"]');
+    if (!node) return;
+    if (node.type === 'checkbox') node.checked = !!value;
+    else node.value = String(value);
+  }
+
+  /* Fill the dropdowns from a picked weapon profile (p154-157). */
+  function applyWeapon(root, prefix, profile, melee) {
+    const t = profile.traits;
+    setControl(root, prefix + '.str', profile.str === null ? 0 : profile.str);
+    setControl(root, prefix + '.ap', profile.ap);
+    setControl(root, prefix + '.lethality', profile.lethality === null ? 0 : profile.lethality);
+    setControl(root, prefix + '.damage', t.damage);
+    if (!melee) setControl(root, prefix + '.rapidFire', t.rapidFire);
+    for (const k of ['toxin', 'rending', 'shred', 'breaching', 'shock', 'blaze']) {
+      setControl(root, prefix + '.' + k, t[k]);
+    }
+    for (const k of ['autoHit', 'gas', 'web', 'flash', 'graviton']) {
+      setControl(root, prefix + '.' + k, t[k]);
+    }
+    if (melee) {
+      setControl(root, prefix + '.light', t.light);
+      setControl(root, prefix + '.strBonus', false);
+      if (prefix === 'w1') setControl(root, 'a.paired', t.paired);
+    }
+  }
+
+  function applyFighter(root, f, asTarget, melee) {
+    if (asTarget) {
+      setControl(root, 't.T', f.T);
+      setControl(root, 't.W', f.W);
+      setControl(root, 't.sv', f.sv);
+      setControl(root, 't.initiative', f.I);
+      setControl(root, 't.strength', f.S);
+      setControl(root, 't.isVehicle', !!f.vehicle);
+    } else {
+      setControl(root, 'a.skill', melee ? f.ws : f.bs);
+      setControl(root, 'a.S', f.S);
+      setControl(root, 'a.A', f.A);
+    }
+  }
+
+  /* ---- assembling engine input ------------------------------------------ */
+  function faceSpec(code) {
+    const p = String(code || '1/2/3').split('/').map(Number);
+    return { ooa: p[0], si: p[1], inj: p[2] };
+  }
+
+  function targetInput(st, melee) {
+    const t = st.t;
+    let mods = Number(t.saveOther) || 0;
+    if (!melee) {
+      mods += Number(t.rangeBand) || 0;
+      if (t.shield) mods += 1;
+    } else {
+      if (t.parry) mods += 1;
+      if (t.mesh) mods += 1;
+    }
+    return {
+      T: t.T, W: t.W, sv: t.sv, inv: t.inv, saveMods: mods, status: t.status,
+      isVehicle: !!t.isVehicle, initiative: t.initiative, strength: t.strength,
+      respirator: !!t.respirator
+    };
+  }
+
+  function weaponInput(w, attackerS) {
+    let str = w.str;
+    if (typeof str === 'string' && str[0] === 'S') {
+      str = attackerS + (str.length > 1 ? parseInt(str.slice(1), 10) : 0);
+    }
+    if (w.strBonus) str = (str || 0) + 1;
+    return {
+      str: str ? str : null, ap: Number(w.ap) || 0,
+      lethality: Number(w.lethality) || 0, damage: Number(w.damage) || 1,
+      rapidFire: Number(w.rapidFire) || 0,
+      toxin: Number(w.toxin) || 0, rending: Number(w.rending) || 0,
+      shred: Number(w.shred) || 0, breaching: Number(w.breaching) || 0,
+      shock: Number(w.shock) || 0, blaze: Number(w.blaze) || 0,
+      gas: !!w.gas, web: !!w.web, flash: !!w.flash, graviton: !!w.graviton,
+      autoHit: !!w.autoHit, unstable: false
+    };
+  }
+
+  /* The profile line as the Trading Post prints it, so a filled-in form can
+     be checked against p154-157 at a glance. */
+  function profileLine(p) {
+    const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const bits = [
+      p.sr + (p.lr && p.lr !== '-' ? '/' + p.lr : ''),
+      'Str ' + (p.str === null ? '-' : p.str),
+      'AP ' + (p.ap ? (p.ap > 0 ? '+' + p.ap : p.ap) : '-'),
+      'L ' + (p.lethality === null ? '-' : p.lethality)
+    ];
+    if (p.traitText) bits.push(p.traitText);
+    return '<b>' + esc(p.name) + '</b> \u00b7 ' + bits.map(esc).join(' \u00b7 ');
+  }
+
+  /* ---- rendering results ------------------------------------------------ */
+  function show(root, res, notes) {
+    for (const k of ['fleshWound', 'serious', 'outOfAction']) {
+      root.querySelector('[data-out="' + k + '"]').textContent = pct(res[k]);
+    }
+    for (const k of ['unharmed', 'wounded', 'fleshWound', 'serious', 'outOfAction']) {
+      const seg = root.querySelector('[data-seg="' + k + '"]');
+      seg.style.width = (res[k] * 100).toFixed(2) + '%';
+      seg.style.background = { unharmed: 'var(--panel-2)', wounded: 'var(--ok)',
+        fleshWound: 'var(--flesh)', serious: 'var(--serious)', outOfAction: 'var(--ooa)' }[k];
+    }
+    const bits = ['Unharmed <b>' + pct(res.unharmed) + '</b>'];
+    if (res.wounded > 0) bits.push('Wounded, still standing <b>' + pct(res.wounded) + '</b>');
+    bits.push(
+      'At least one hit <b>' + pct(res.pHit) + '</b>',
+      'Expected hits <b>' + res.expectedHits.toFixed(2) + '</b>',
+      (notes.twoWeapons ? 'A primary hit wounds <b>' : 'A hit wounds <b>') + pct(res.perHit.pWound) + '</b>',
+      'A wound beats the save <b>' + pct(res.perHit.pWound ? res.perHit.pUnsaved / res.perHit.pWound : 0) + '</b>');
+    if (res.webbed > 0) bits.push('Webbed <b>' + pct(res.webbed) + '</b>');
+    if (res.blinded > 0) bits.push('Blinded <b>' + pct(res.blinded) + '</b>');
+    root.querySelector('[data-minor]').innerHTML = bits.join(' · ');
+
+    const paint = (sel, lines) => {
+      const box = root.querySelector(sel);
+      box.innerHTML = lines.map(t => '<p>' + t + '</p>').join('');
+      box.classList.toggle('hidden', lines.length === 0);
+    };
+    paint('[data-warn]', res.problems);
+    paint('[data-notes]', notes);
+  }
+
+  /* ---- wiring ----------------------------------------------------------- */
+  function wire(root, melee) {
+    let lastPick = { weapon: '', weapon2: '', fighter: '', fighter2: '' };
+
+    function recompute(fromPicker) {
+      const st = readState(root);
+
+      // A picker only fills fields in; after that every field stays editable.
+      if (st.pick.weapon && st.pick.weapon !== lastPick.weapon) {
+        const p = (melee ? Data.melee : Data.ranged).find(x => x.name === st.pick.weapon);
+        if (p) applyWeapon(root, 'w1', p, melee);
+      }
+      if (melee && st.pick.weapon2 && st.pick.weapon2 !== lastPick.weapon2) {
+        const p = Data.melee.find(x => x.name === st.pick.weapon2);
+        if (p) { applyWeapon(root, 'w2', p, true); setControl(root, 'a.useSecondary', true); }
+      }
+      if (st.pick.fighter && st.pick.fighter !== lastPick.fighter) {
+        const f = Data.fighters.find(x => x.name === st.pick.fighter);
+        if (f) applyFighter(root, f, !melee, melee);
+      }
+      if (melee && st.pick.fighter2 && st.pick.fighter2 !== lastPick.fighter2) {
+        const f = Data.fighters.find(x => x.name === st.pick.fighter2);
+        if (f) applyFighter(root, f, true, true);
+      }
+      lastPick = { weapon: st.pick.weapon, weapon2: st.pick.weapon2,
+                   fighter: st.pick.fighter, fighter2: st.pick.fighter2 };
+
+      const s = readState(root);
+      const faces = faceSpec(s.faces);
+      const target = targetInput(s, melee);
+      const notes = [];
+      let res;
+
+      if (!melee) {
+        const w = weaponInput(s.w1, 0);
+        res = Engine.computeRanged({ skill: s.a.skill, hitMod: s.a.hitMod, weapon: w, target: target, faces: faces });
+        if (w.rapidFire > 0) notes.push('Rapid Fire (' + w.rapidFire + '): assumes all ' + w.rapidFire +
+          ' Firepower dice are rolled. Running out of ammo is not tracked.');
+        if (w.autoHit) notes.push('Template: the target is hit automatically, so hit modifiers and Shock (X+) never come into it.');
+      } else {
+        const sec = !!s.a.useSecondary;
+        const dice = s.a.reacting ? 1 : (s.a.A + (s.a.charge ? 1 : 0) + (Number(s.a.paired) || 0));
+        const hitMod = (Number(s.a.hitMod) || 0) + (s.a.assist ? 1 : 0) -
+                       (s.a.interference ? 1 : 0) - (s.a.blind ? 1 : 0);
+        root.querySelector('[data-only="secondary"]').classList.toggle('hidden', !sec);
+        const primary = weaponInput(s.w1, s.a.S);
+        const weapons = [{ weapon: primary, attacks: s.w1.light ? 1 : dice, skill: s.a.skill, hitMod: hitMod }];
+        if (sec) weapons.push({ weapon: weaponInput(s.w2, s.a.S), attacks: 1, skill: s.a.skill, hitMod: hitMod });
+        res = Engine.computeMelee({ weapons: weapons, target: target, faces: faces });
+        notes.twoWeapons = sec;
+        notes.push('Attack dice: ' + weapons[0].attacks + ' with the primary weapon' +
+          (sec ? ' and 1 with the secondary' : '') + '.');
+        if (s.w1.light && dice > 1) notes.push('Light: only one attack may ever be made with it, however many Attack dice the fighter has (p163).');
+      }
+
+      const picked = (melee ? Data.melee : Data.ranged).find(x => x.name === s.pick.weapon);
+      const picked2 = melee ? Data.melee.find(x => x.name === s.pick.weapon2) : null;
+      const line = root.querySelector('[data-profile]');
+      const lines = [];
+      if (picked) lines.push(profileLine(picked));
+      if (picked2 && s.a.useSecondary) lines.push(profileLine(picked2));
+      line.innerHTML = lines.join('<br>');
+      line.classList.toggle('hidden', lines.length === 0);
+      const inPlay = lines.length === 2 ? [picked, picked2] : (picked ? [picked] : []);
+      if (inPlay.length) {
+        const left = [];
+        for (const p of inPlay) {
+          for (const tr of unmodelled(p.traitText)) if (left.indexOf(tr) < 0) left.push(tr);
+        }
+        if (left.length) notes.push('Not part of this calculation: ' + left.join(', ') + '.');
+        if (inPlay.some(p => p.traits.blast)) notes.push('Blast: scatter is not modelled. The named target is treated as hit when the hit roll succeeds, and as missed otherwise.');
+        if (inPlay.some(p => p.traits.smoke)) notes.push('Smoke: a model hit by it is never wounded and is not Suppressed (p165), so there is nothing to work out.');
+        if (inPlay.some(p => p.traits.unstable)) notes.push('Unstable: on a natural 1 to hit, the firer takes a hit from this profile instead — 1 in 6 (p165).');
+      }
+      if (target.status !== 'active') {
+        notes.push(target.status === 'seriously'
+          ? 'The target starts Seriously Injured, so "seriously injured" includes leaving them exactly as they are, and a Serious Injury result does nothing (p77).'
+          : 'The target starts on 0 wounds and Injured, so "flesh wound" includes leaving them exactly as they are.');
+      }
+      show(root, res, notes);
+    }
+
+    root.addEventListener('change', recompute);
+    root.addEventListener('input', recompute);
+    recompute();
+  }
+
+  /* ---- boot -------------------------------------------------------------- */
+  const rangedRoot = document.getElementById('panel-ranged');
+  const meleeRoot = document.getElementById('panel-melee');
+  buildRanged(rangedRoot);
+  buildMelee(meleeRoot);
+  wire(rangedRoot, false);
+  wire(meleeRoot, true);
+
+  const tabs = [document.getElementById('tab-ranged'), document.getElementById('tab-melee')];
+  const panels = [rangedRoot, meleeRoot];
+  tabs.forEach((tab, i) => tab.addEventListener('click', () => {
+    tabs.forEach((t, j) => t.setAttribute('aria-selected', String(i === j)));
+    panels.forEach((p, j) => p.classList.toggle('hidden', i !== j));
+    window.scrollTo(0, 0);
+  }));
+})();
+</script>
+</body>
+</html>
