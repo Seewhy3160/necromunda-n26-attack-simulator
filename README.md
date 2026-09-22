@@ -105,8 +105,19 @@ Trading Post list has both traits.
 * **Twin-linked** is not modelled, because rerolling Firepower dice needs a policy for
   when the attacker would choose to.
 * **Fighter profiles.** The core rules print exactly one full fighter profile (the Escher
-  Gang Sister, p50), and it is labelled as such. The other entries in the picker are
-  rounded archetypes for quick setup, marked "not book profiles".
+  Gang Sister, p50), and it is labelled as such. The other entries are the common fighter
+  types, for quick setup:
+
+  | Type | Str | T | W | Sv |
+  |---|---|---|---|---|
+  | Ganger | 3 | 3 | 1 | 6+ |
+  | Champion | 3 | 3 | 2 | 5+ |
+  | Leader | 3 | 3 | 3 | 5+ |
+  | Brute | 5 | 4 | 4 | 4+ |
+
+  Their Weapon Skill, Ballistic Skill, Initiative and Attacks vary by gang and are rounded.
+  The Juve entry has not been checked over. Every field stays editable, so a picker is only
+  ever a starting point.
 * Weapon variants that differ only by traits with no effect on the odds — the warp round
   versions of the autogun, autopistol and stub gun — are left out of the picker.
 * **Vehicles are not covered.** They are not part of this edition, so there is no vehicle

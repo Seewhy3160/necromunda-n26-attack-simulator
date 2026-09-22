@@ -631,16 +631,18 @@ const Data = (function () {
   /* Pistols keep the Light trait, so they can be swung in close combat (p74). */
   const meleeUsable = melee.concat(ranged.filter(p => p.traits.light));
 
-  /* Fighter profiles. The core rules print exactly one full profile (p50);
-     the rest are rounded archetypes for quick setup, not book entries. */
+  /* Fighter profiles. The core rules print exactly one full profile (p50).
+     The rest are the common fighter types, for quick setup; their Toughness,
+     Strength, Wounds and Save are the usual values, while WS, BS, Initiative
+     and Attacks vary by gang and are rounded here. */
   const FIGHTERS = [
     { name: 'Escher Gang Sister (core rules example, p50)', book: true,
       ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
     { name: 'Ganger', ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
     { name: 'Champion', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 5 },
-    { name: 'Leader', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 4 },
+    { name: 'Leader', ws: 3, bs: 3, S: 3, T: 3, W: 3, I: 4, A: 2, sv: 5 },
     { name: 'Juve', ws: 5, bs: 5, S: 3, T: 3, W: 1, I: 3, A: 1, sv: 0 },
-    { name: 'Brute', ws: 4, bs: 5, S: 4, T: 4, W: 3, I: 4, A: 2, sv: 4 }
+    { name: 'Brute', ws: 4, bs: 5, S: 5, T: 4, W: 4, I: 4, A: 2, sv: 4 }
   ];
 
   return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits };
@@ -744,7 +746,7 @@ if (typeof module !== 'undefined') module.exports = Data;
   }
   const FIGHTER_OPTS = [['', 'Pick a profile...'],
     ['group', 'From the core rules', Data.fighters.filter(f => f.book).map(f => [f.name, f.name])],
-    ['group', 'Generic archetypes (not book profiles)', Data.fighters.filter(f => !f.book).map(f => [f.name, f.name])]];
+    ['group', 'Common fighter types', Data.fighters.filter(f => !f.book).map(f => [f.name, f.name])]];
 
   /* ---- trait bookkeeping ------------------------------------------------
      Traits the calculator actually uses, so the rest can be named plainly

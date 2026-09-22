@@ -110,3 +110,12 @@ test('fighter profiles say which one is actually from the book', () => {
     for (const k of ['ws', 'bs', 'S', 'T', 'W', 'I', 'A']) assert.ok(f[k] >= 1, `${f.name}.${k}`);
   }
 });
+
+test('the common fighter types carry the stats they were given', () => {
+  const by = (name) => D.fighters.find(f => f.name === name);
+  const core = (f) => [f.S, f.T, f.W, f.sv];
+  assert.deepEqual(core(by('Ganger')), [3, 3, 1, 6]);
+  assert.deepEqual(core(by('Champion')), [3, 3, 2, 5]);
+  assert.deepEqual(core(by('Leader')), [3, 3, 3, 5]);
+  assert.deepEqual(core(by('Brute')), [5, 4, 4, 4]);
+});
