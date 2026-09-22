@@ -37,15 +37,16 @@ three-attack melee flurry are all handled by the same chain:
 1. **Hit roll** (p72, p74). Natural 1 always misses, natural 6 always hits. A Seriously
    Injured target applies its −1 automatically.
 2. **Rapid Fire** (p73). One hit roll turns into a number of hits equal to the total
-   bullet holes across X Firepower dice.
+   bullet holes across X Firepower dice — one hit on a 1–3, two on a 4–5, three on a 6.
 3. **Wound roll** (p76), from the Strength versus Toughness table, or replaced by
    Toxin, Shock, Graviton Pulse or Flash where a trait says so.
 4. **Save roll** (p76). AP, cover and characteristic bumps fold into one modifier; the
    model takes whichever of its armour and invulnerable saves is better, because only
    one save is rolled per hit. A natural 1 or 2 always fails.
 5. **Injury dice** (p77). An unsaved wound that drops the target to zero Wounds means
-   Lethality Injury dice, of which the attacker **selects one** — so the best available
-   result is taken, and a Serious Injury does nothing to a model already Seriously Injured.
+   Lethality Injury dice — 1–2 Flesh Wound, 3–5 Seriously Injured, 6 Out of Action — of
+   which the attacker **selects one**, so the best available result is taken, and a
+   Serious Injury does nothing to a model already Seriously Injured.
 
 In melee each Attack dice is resolved in sequence, so the target's wounds and condition
 carry from one attack to the next.
@@ -64,11 +65,8 @@ Initiative order and return attacks, skills, and the Lasting Injury table. When 
 weapon carries one of these, the page names it under the results rather than dropping it
 silently.
 
-## Assumptions, and two things worth checking against your book
+## Assumptions, and one thing worth checking against your book
 
-* **Injury dice faces.** The core rules name the three faces (p77) but not how many of
-  each. The tool assumes the usual 1 Out of Action / 2 Serious Injury / 3 Injured, and
-  the spread is a dropdown in the Assumptions panel if your book says otherwise.
 * **The short/long range save modifier.** The cover table on p76 is transcribed as
   printed: +1 to the save within the weapon's Short Range, +2 within Long Range. A
   better save at short range reads oddly, so it is worth a look at the book. The free
@@ -81,6 +79,8 @@ silently.
   rounded archetypes for quick setup, marked "not book profiles".
 * Weapon variants that differ only by traits with no effect on the odds — the warp round
   versions of the autogun, autopistol and stub gun — are left out of the picker.
+* **Vehicles are not covered.** They are not part of this edition, so there is no vehicle
+  target, no Damage dice and no Lasting Damage table.
 
 ## Tests
 

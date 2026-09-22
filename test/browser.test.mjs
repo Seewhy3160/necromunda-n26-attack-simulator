@@ -66,10 +66,11 @@ t('the page loads and computes without errors', async () => {
 });
 
 t('the default ranged shot matches the hand-worked figure', async () => {
-  // BS 4+, Str 4 vs T3, Sv 6+, W1, Lethality 1: 3/6 x 4/6 x 5/6 unsaved.
+  // BS 4+, Str 4 vs T3, Sv 6+, W1, Lethality 1: 3/6 x 4/6 x 5/6 unsaved, then
+  // one Injury dice - 1-2 Flesh Wound, 3-5 Seriously Injured, 6 Out of Action.
   const o = await odds('panel-ranged');
-  assert.equal(o.flesh, '13.9%');
-  assert.equal(o.serious, '9.3%');
+  assert.equal(o.flesh, '9.3%');
+  assert.equal(o.serious, '13.9%');
   assert.equal(o.ooa, '4.6%');
 });
 
@@ -199,3 +200,4 @@ t('the unmodelled-trait note covers the secondary weapon too', async () => {
   await check('panel-melee', 'a.useSecondary', false);
   assert.doesNotMatch(await page.textContent('#panel-melee [data-notes]'), /Ammo \(6\+\)/);
 });
+

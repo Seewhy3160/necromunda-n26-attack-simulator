@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { loadScript } from './load.mjs';
 
 const E = loadScript('engine');
-const FACES = { ooa: 1, si: 2, inj: 3 };
+/* The Injury dice, per the dice symbols chart. */
+const FACES = E.INJURY_DICE;
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} !== ${b}`);
 
 /** Minimal weapon with every trait switched off. */
@@ -18,7 +19,7 @@ function weapon(o = {}) {
 function target(o = {}) {
   return Object.assign({
     T: 3, W: 1, sv: 0, inv: 0, saveMods: 0, status: 'active',
-    isVehicle: false, initiative: 4, strength: 3, respirator: false
+    initiative: 4, strength: 3, respirator: false
   }, o);
 }
 const ranged = (o = {}) => E.computeRanged(Object.assign(
@@ -59,24 +60,34 @@ test('save roll: AP, cover, natural 1-2 auto-fail, best of armour/invuln (p76)',
   near(E.saveProb(4, +2, 5, false), 2 / 6);    // ...but the invuln still stands
 });
 
+test('the Injury dice matches the dice symbols chart', () => {
+  // 1-2 Flesh Wound, 3-5 Seriously Injured, 6 Out of Action.
+  assert.deepEqual(E.INJURY_DICE, { ooa: 1, si: 3, inj: 2 });
+  assert.equal(E.INJURY_DICE.ooa + E.INJURY_DICE.si + E.INJURY_DICE.inj, 6);
+});
+
 test('injury dice: attacker rolls Lethality and picks the best (p77)', () => {
   const l1 = E.injuryPick(1, FACES);
-  near(l1.ooa, 1 / 6); near(l1.si, 2 / 6); near(l1.inj, 3 / 6);
+  near(l1.ooa, 1 / 6); near(l1.si, 3 / 6); near(l1.inj, 2 / 6);
   const l2 = E.injuryPick(2, FACES);
-  near(l2.ooa, 11 / 36); near(l2.si, 16 / 36); near(l2.inj, 9 / 36);
+  near(l2.ooa, 1 - Math.pow(5 / 6, 2));                       // 11/36
+  near(l2.inj, Math.pow(2 / 6, 2));                           // 4/36
+  near(l2.si, Math.pow(5 / 6, 2) - Math.pow(2 / 6, 2));       // 21/36
   near(l2.ooa + l2.si + l2.inj, 1);
   const l3 = E.injuryPick(3, FACES);
   near(l3.ooa, 1 - Math.pow(5 / 6, 3));
   near(E.injuryPick(0, FACES).inj, 1);         // no dice -> Injured at 0 wounds
 });
 
-test('firepower dice: 1/2/3 holes plus one ammo face (p72)', () => {
+test('firepower dice: a D6 of 1, 1, 1, 2, 2, 3 hits (p72)', () => {
   const d1 = E.firepowerDist(1);
-  near(d1.get(1), 0.5); near(d1.get(2), 0.25); near(d1.get(3), 0.25);
+  near(d1.get(1), 3 / 6); near(d1.get(2), 2 / 6); near(d1.get(3), 1 / 6);
+  near([...d1.entries()].reduce((a, [n, p]) => a + n * p, 0), 10 / 6);
   const d2 = E.firepowerDist(2);
-  near(d2.get(2), 0.25);                        // 1+1
+  near(d2.get(2), (3 / 6) * (3 / 6));           // 1+1
+  near(d2.get(6), (1 / 6) * (1 / 6));           // 3+3
   near([...d2.values()].reduce((a, b) => a + b), 1);
-  near([...d2.entries()].reduce((a, [n, p]) => a + n * p, 0), 3.5);
+  near([...d2.entries()].reduce((a, [n, p]) => a + n * p, 0), 20 / 6);
   near(E.firepowerDist(0).get(0), 1);
 });
 
@@ -84,8 +95,8 @@ test('plain shot end to end: BS4+ S4 vs T3 Sv6+ W1', () => {
   const r = ranged({ target: target({ sv: 6 }) });
   const pUnsaved = (3 / 6) * (4 / 6) * (5 / 6);
   near(r.outOfAction, pUnsaved * 1 / 6);
-  near(r.serious, pUnsaved * 2 / 6);
-  near(r.fleshWound, pUnsaved * 3 / 6);
+  near(r.serious, pUnsaved * 3 / 6);
+  near(r.fleshWound, pUnsaved * 2 / 6);
   near(r.unharmed, 1 - pUnsaved);
   near(r.total, 1);
 });
@@ -130,11 +141,11 @@ test('Damage (X) drops several wounds at once (p162)', () => {
   near(dmg3.fleshWound + dmg3.serious + dmg3.outOfAction, (5 / 6) * (5 / 6));
 });
 
-test('Toxin ignores Strength vs Toughness, and barely scratches vehicles (p165)', () => {
-  const vsFighter = ranged({ skill: 2, weapon: weapon({ str: null, toxin: 3 }), target: target({ T: 10 }) });
-  near(vsFighter.perHit.pWound, 4 / 6);
-  const vsVehicle = ranged({ skill: 2, weapon: weapon({ str: null, toxin: 3 }), target: target({ T: 10, isVehicle: true }) });
-  near(vsVehicle.perHit.pWound, 1 / 6);
+test('Toxin ignores Strength versus Toughness entirely (p165)', () => {
+  const tough = ranged({ skill: 2, weapon: weapon({ str: null, toxin: 3 }), target: target({ T: 10 }) });
+  near(tough.perHit.pWound, 4 / 6);
+  const frail = ranged({ skill: 2, weapon: weapon({ str: null, toxin: 3 }), target: target({ T: 1 }) });
+  near(frail.perHit.pWound, 4 / 6);
 });
 
 test('Breaching and Gas deny armour saves but not invulnerable saves (p162-163)', () => {

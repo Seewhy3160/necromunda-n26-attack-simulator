@@ -166,9 +166,13 @@ const Engine = (function () {
   }
 
   /* ---- Injury dice (p77) -----------------------------------------------
+     Per the dice symbols chart, the Injury dice reads 1-2 Flesh Wound,
+     3-5 Seriously Injured, 6 Out of Action.
+
      The attacker rolls Lethality dice and selects one, so they take the best
      available result: Out of Action, else Serious Injury, else Injured.
      Lethality 0 means no dice — the target is simply Injured at 0 Wounds. */
+  const INJURY_DICE = { ooa: 1, si: 3, inj: 2 };
   function injuryPick(L, faces) {
     if (L <= 0) return { ooa: 0, si: 0, inj: 1 };
     const notOoa = Math.pow((faces.si + faces.inj) / 6, L);
@@ -266,16 +270,17 @@ const Engine = (function () {
   }
 
   /* ---- Firepower dice (p72) --------------------------------------------
-     Four faces: one hole, two holes, three holes, one hole + ammo symbol.
-     Hits equal the total bullet holes across the dice rolled. */
+     A D6 marked, per the dice symbols chart: 1 = one hit plus the ammo
+     symbol, 2-3 = one hit, 4-5 = two hits, 6 = three hits. Hits equal the
+     total bullet holes across the dice rolled. */
   function firepowerDist(n) {
     let dist = new Map([[0, 1]]);
     for (let i = 0; i < n; i++) {
       const next = new Map();
       for (const [total, p] of dist) {
-        addTo(next, total + 1, p * 0.5);   // single, and single+ammo
-        addTo(next, total + 2, p * 0.25);
-        addTo(next, total + 3, p * 0.25);
+        addTo(next, total + 1, p * 3 / 6);   // faces 1, 2, 3
+        addTo(next, total + 2, p * 2 / 6);   // faces 4, 5
+        addTo(next, total + 3, p * 1 / 6);   // face 6
       }
       dist = next;
     }
@@ -298,8 +303,7 @@ const Engine = (function () {
 
     let wt;
     if (w.toxin > 0) {
-      // Toxin (p165): wounds a Fighter on X+, a Vehicle only on a natural 6.
-      wt = t.isVehicle ? 6 : w.toxin;
+      wt = w.toxin;   // Toxin (p165): wounds on X+, whatever the Toughness
     } else if (w.str === null) {
       wt = 7;  // Strength '-' with no trait to resolve it: the hit does nothing.
       problems.push('This profile has no Strength and no trait that replaces the wound roll, so no wound is possible. Set a Strength, or pick Toxin / Graviton Pulse / Flash / Web.');
@@ -450,7 +454,7 @@ const Engine = (function () {
   return {
     computeRanged: computeRanged, computeMelee: computeMelee,
     woundTarget: woundTarget, saveProb: saveProb, injuryPick: injuryPick,
-    firepowerDist: firepowerDist, isHit: isHit,
+    firepowerDist: firepowerDist, isHit: isHit, INJURY_DICE: INJURY_DICE,
     COND: { NONE: NONE, INJURED: INJURED, SERIOUS: SERIOUS, OOA: OOA }
   };
 })();
@@ -607,8 +611,7 @@ const Data = (function () {
     { name: 'Champion', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 5 },
     { name: 'Leader', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 4 },
     { name: 'Juve', ws: 5, bs: 5, S: 3, T: 3, W: 1, I: 3, A: 1, sv: 0 },
-    { name: 'Brute', ws: 4, bs: 5, S: 4, T: 4, W: 3, I: 4, A: 2, sv: 4 },
-    { name: 'Vehicle', ws: 6, bs: 4, S: 5, T: 5, W: 4, I: 3, A: 1, sv: 4, vehicle: true }
+    { name: 'Brute', ws: 4, bs: 5, S: 4, T: 4, W: 3, I: 4, A: 2, sv: 4 }
   ];
 
   return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits };
@@ -697,13 +700,6 @@ if (typeof module !== 'undefined') module.exports = Data;
   const W_OPTS = range(1, 10).map(n => [n, String(n)]);
   const ATTACKS = range(1, 6).map(n => [n, String(n)]);
   const STATUS = [['active', 'Active'], ['injured', 'Injured (0 wounds)'], ['seriously', 'Seriously Injured']];
-  const FACES = [
-    ['1/2/3', '1 Out of Action, 2 Serious, 3 Injured'],
-    ['2/2/2', '2 / 2 / 2'],
-    ['1/1/4', '1 / 1 / 4'],
-    ['2/1/3', '2 / 1 / 3'],
-    ['1/3/2', '1 / 3 / 2']
-  ];
   const MELEE_STR = [['S', 'S (wielder)'], ['S+1', 'S+1'], ['S+2', 'S+2'], ['S+3', 'S+3'],
                      [0, '- (none)']].concat(range(1, 10).map(n => [n, String(n)]));
   const RANGE_BAND = [[0, 'none'], [1, '+1 (within short range)'], [2, '+2 (within long range)']];
@@ -743,10 +739,12 @@ if (typeof module !== 'undefined') module.exports = Data;
     return (x * 100).toFixed(1) + '%';
   };
 
+  const LABELS = { fleshWound: 'Flesh wound', serious: 'Serious injury', outOfAction: 'Out of action' };
+
   function resultsBlock() {
     const mk = (cls, key) => el('div', { class: 'odd ' + cls },
       el('div', { class: 'v', 'data-out': key, text: '0%' }),
-      el('div', { class: 'k', text: { fleshWound: 'Flesh wound', serious: 'Serious injury', outOfAction: 'Out of action' }[key] }));
+      el('div', { class: 'k', text: LABELS[key] }));
     const bar = el('div', { class: 'bar' });
     for (const k of ['unharmed', 'wounded', 'fleshWound', 'serious', 'outOfAction']) {
       bar.appendChild(el('i', { 'data-seg': k, style: 'width:0' }));
@@ -795,7 +793,6 @@ if (typeof module !== 'undefined') module.exports = Data;
       field('Initiative (for Flash)', 't.initiative', T_OPTS, 4),
       field('Strength (for Graviton Pulse)', 't.strength', T_OPTS, 3),
       chipRow(
-        chip('Vehicle', 't.isVehicle', false),
         chip('Respirator', 't.respirator', false),
         melee ? chip('Parry weapon (+1 Sv)', 't.parry', false) : chip('Shield (+1 Sv vs shooting)', 't.shield', false),
         melee ? chip('Mesh armour (+1 Sv in close combat)', 't.mesh', false) : null
@@ -804,11 +801,11 @@ if (typeof module !== 'undefined') module.exports = Data;
 
   function assumptionsBlock(extra) {
     const body = el('div', { class: 'body' });
-    body.appendChild(el('div', { class: 'grid' },
-      field('Injury dice faces', 'faces', FACES, '1/2/3',
-        'The core rules name the three faces (p77) but not how many of each. The first option is the usual spread.')));
     body.appendChild(el('p', { html:
-      '<b>Flesh wound</b> is the Injury dice result the rules print as <b>Injured</b> (p77): no further damage, ' +
+      'A fighter reduced to zero Wounds is resolved on the <b>Injury dice</b>: ' +
+      '1-2 Flesh Wound, 3-5 Seriously Injured, 6 Out of Action.' }));
+    body.appendChild(el('p', { html:
+      '<b>Flesh wound</b> is the result the rules text prints as <b>Injured</b> (p77): no further damage, ' +
       'but the model is left on zero Wounds and gains no benefit from its skills.' }));
     body.appendChild(el('p', { html:
       'The attacker rolls Lethality Injury dice and <b>selects one</b> (p77), so the best available result is taken. ' +
@@ -925,7 +922,6 @@ if (typeof module !== 'undefined') module.exports = Data;
       setControl(root, 't.sv', f.sv);
       setControl(root, 't.initiative', f.I);
       setControl(root, 't.strength', f.S);
-      setControl(root, 't.isVehicle', !!f.vehicle);
     } else {
       setControl(root, 'a.skill', melee ? f.ws : f.bs);
       setControl(root, 'a.S', f.S);
@@ -934,10 +930,7 @@ if (typeof module !== 'undefined') module.exports = Data;
   }
 
   /* ---- assembling engine input ------------------------------------------ */
-  function faceSpec(code) {
-    const p = String(code || '1/2/3').split('/').map(Number);
-    return { ooa: p[0], si: p[1], inj: p[2] };
-  }
+
 
   function targetInput(st, melee) {
     const t = st.t;
@@ -951,7 +944,7 @@ if (typeof module !== 'undefined') module.exports = Data;
     }
     return {
       T: t.T, W: t.W, sv: t.sv, inv: t.inv, saveMods: mods, status: t.status,
-      isVehicle: !!t.isVehicle, initiative: t.initiative, strength: t.strength,
+      initiative: t.initiative, strength: t.strength,
       respirator: !!t.respirator
     };
   }
@@ -1047,8 +1040,8 @@ if (typeof module !== 'undefined') module.exports = Data;
                    fighter: st.pick.fighter, fighter2: st.pick.fighter2 };
 
       const s = readState(root);
-      const faces = faceSpec(s.faces);
       const target = targetInput(s, melee);
+      const faces = Engine.INJURY_DICE;
       const notes = [];
       let res;
 
@@ -1095,7 +1088,7 @@ if (typeof module !== 'undefined') module.exports = Data;
       }
       if (target.status !== 'active') {
         notes.push(target.status === 'seriously'
-          ? 'The target starts Seriously Injured, so "seriously injured" includes leaving them exactly as they are, and a Serious Injury result does nothing (p77).'
+          ? 'The target already starts Seriously Injured, so "serious injury" includes leaving them exactly as they are, and a Serious Injury result does nothing (p77).'
           : 'The target starts on 0 wounds and Injured, so "flesh wound" includes leaving them exactly as they are.');
       }
       show(root, res, notes);

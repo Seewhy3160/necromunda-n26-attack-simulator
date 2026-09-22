@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { loadScript } from './load.mjs';
 
 const E = loadScript('engine');
-const FACES = { ooa: 1, si: 2, inj: 3 };
+const FACES = E.INJURY_DICE;
 const TRIALS = 2_000_000;
 const TOL = 0.0035;
 
@@ -22,11 +22,13 @@ function rng(seed) {
 
 function makeSim(rand) {
   const d6 = () => 1 + Math.floor(rand() * 6);
-  const injuryDie = () => {            // 1 Out of Action, 2 Serious, 3 Injured
+  /* Injury dice: 1-2 Flesh Wound, 3-5 Seriously Injured, 6 Out of Action. */
+  const injuryDie = () => {
     const f = d6();
-    return f === 1 ? 3 : (f <= 3 ? 2 : 1);
+    return f === 6 ? 3 : (f <= 2 ? 1 : 2);
   };
-  const firepowerDie = () => [1, 2, 3, 1][Math.floor(rand() * 4)];
+  /* Firepower dice: 1-3 one hit, 4-5 two hits, 6 three hits. */
+  const firepowerDie = () => { const f = d6(); return f <= 3 ? 1 : (f <= 5 ? 2 : 3); };
 
   function woundTarget(S, T) {
     if (S >= 2 * T) return 2;
@@ -55,7 +57,7 @@ function makeSim(rand) {
 
     natural = autoWound ? 6 : d6();
     let target;
-    if (w.toxin) target = t.isVehicle ? 6 : w.toxin;
+    if (w.toxin) target = w.toxin;
     else target = woundTarget(w.str, t.T);
     wounded = autoWound || natural >= target;
 
@@ -169,7 +171,7 @@ function weapon(o = {}) {
 function target(o = {}) {
   return Object.assign({
     T: 3, W: 1, sv: 0, inv: 0, saveMods: 0, status: 'active',
-    isVehicle: false, initiative: 4, strength: 3, respirator: false
+    initiative: 4, strength: 3, respirator: false
   }, o);
 }
 
