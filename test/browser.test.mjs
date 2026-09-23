@@ -219,3 +219,32 @@ t('a Blast weapon scatters, and says so in as many words', async () => {
     'counting 1-2" scatters should make a blast weapon deadlier');
   assert.doesNotMatch(await page.textContent('#panel-ranged [data-notes]'), /scatter of 1"/);
 });
+
+t('Unstable in the Ballistic Skill list resolves the hit on the firer', async () => {
+  await page.click('#tab-ranged');
+  await setSel('panel-ranged', 'pick.weapon', 'Plasma gun');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.rapidFire"]'), '1');
+
+  // Before switching, the weapon's note points at the self-hit mode.
+  assert.match(await page.textContent('#panel-ranged [data-notes]'),
+    /Pick .*Unstable.* in the Ballistic Skill list/);
+
+  await setSel('panel-ranged', 'a.skill', 'unstable');
+  const notes = await page.textContent('#panel-ranged [data-notes]');
+  assert.match(notes, /one confirmed hit, with no hit roll and no Firepower dice/);
+  assert.match(notes, /across all shots fired/);
+  assert.doesNotMatch(notes, /Rapid Fire \(1\): assumes/);   // firepower is off for the self-hit
+  assert.doesNotMatch(notes, /Template: the target is hit automatically/);
+  // Unstable is the calculation here, so it is not listed as left out of it.
+  assert.match(notes, /Not part of this calculation: Ammo \(6\+\)\./);
+
+  // Exactly one hit, and it is certain.
+  const minor = await page.textContent('#panel-ranged [data-minor]');
+  assert.match(minor, /At least one hit\s*100\.0%/);
+  assert.match(minor, /Expected hits\s*1\.00/);
+  assert.doesNotMatch(minor, /by scatter/);
+
+  // Rapid Fire stays on the weapon, so switching back restores the normal shot.
+  await setSel('panel-ranged', 'a.skill', 4);
+  assert.match(await page.textContent('#panel-ranged [data-minor]'), /Expected hits\s*0\.8/);
+});

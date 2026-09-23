@@ -95,6 +95,22 @@ Markers catching models other than the target, and the extra markers a Rapid Fir
 weapon would throw, are outside a one-attacker-one-target calculation. No weapon in the
 Trading Post list has both traits.
 
+### Unstable: what the weapon does to its own firer
+
+Unstable turns a natural 1 on the hit roll into an automatic Hit on the firing model,
+using the weapon's own profile (p165). To work out what that costs you, pick **Unstable**
+at the bottom of the Ballistic Skill list and put the firer's own Toughness, Wounds and
+saves in the target fields.
+
+That resolves **one confirmed Hit** — no hit roll, and no Firepower dice however much
+Rapid Fire the weapon carries, since there is no hit roll for them to hang off. A Blast
+weapon does not scatter either; the hit lands on the firer.
+
+The three headline figures are then for that Hit alone. It happens on 1 in 6 shots, so the
+tool also states the per-shot risk underneath. A plasma gun turned on its own ganger, for
+instance, is a 20.4% chance of going out of action once it goes off — about 3.4% of every
+shot fired.
+
 ## Assumptions, and one thing worth checking against your book
 
 * **The short/long range save modifier.** The cover table on p76 is transcribed as

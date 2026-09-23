@@ -718,6 +718,10 @@ if (typeof module !== 'undefined') module.exports = Data;
   /* ---- option lists ---------------------------------------------------- */
   const range = (a, b) => { const r = []; for (let i = a; i <= b; i++) r.push(i); return r; };
   const SKILL = range(2, 6).map(n => [n, n + '+']);
+  /* Unstable (p165): a natural 1 to hit turns the shot on the firer. Picking it
+     here resolves that hit instead of the shot, so the firer's own risk can be
+     read off by putting their profile in the target fields. */
+  const BS_SKILL = SKILL.concat([['unstable', 'Unstable — hit on the firer']]);
   const MODS = range(-3, 3).map(n => [n, n > 0 ? '+' + n : String(n)]);
   const SAVE_MODS = range(-2, 2).map(n => [n, n > 0 ? '+' + n : String(n)]);
   const STR = [[0, '- (none)']].concat(range(1, 10).map(n => [n, String(n)]));
@@ -866,7 +870,7 @@ if (typeof module !== 'undefined') module.exports = Data;
       field('Target', 'pick.fighter', FIGHTER_OPTS, ''),
       el('p', { class: 'profile', 'data-profile': '1' })));
     root.appendChild(group('Attacker',
-      field('Ballistic Skill', 'a.skill', SKILL, 4),
+      field('Ballistic Skill', 'a.skill', BS_SKILL, 4),
       field('Other hit modifiers', 'a.hitMod', MODS, 0,
         '-1 for a Seriously Injured target is applied for you.')));
     root.appendChild(weaponFields('w1', false));
@@ -1083,14 +1087,30 @@ if (typeof module !== 'undefined') module.exports = Data;
       const target = targetInput(s, melee);
       const faces = Engine.INJURY_DICE;
       const notes = [];
+      const selfHit = !melee && s.a.skill === 'unstable';
       let res;
 
       if (!melee) {
         const w = weaponInput(s.w1, 0);
-        res = Engine.computeRanged({ skill: s.a.skill, hitMod: s.a.hitMod, weapon: w, target: target, faces: faces });
+        if (selfHit) {
+          // One automatic Hit from this weapon's own profile: no hit roll, so no
+          // Firepower dice and no Blast marker to scatter.
+          w.autoHit = true; w.rapidFire = 0; w.blast = false;
+        }
+        res = Engine.computeRanged({
+          skill: selfHit ? 4 : s.a.skill, hitMod: selfHit ? 0 : s.a.hitMod,
+          weapon: w, target: target, faces: faces });
+        if (selfHit) notes.push(
+          '<b>Unstable, hit on the firer.</b> These odds are for the single automatic Hit the ' +
+          'firing model takes from this weapon\u2019s own profile — one confirmed hit, with no hit ' +
+          'roll and no Firepower dice, however much Rapid Fire the weapon has (p165). ' +
+          'Put the <b>firer\u2019s</b> own Toughness, Wounds and saves in the target fields below. ' +
+          'It happens on a natural 1 to hit, so across all shots fired that is ' +
+          pct(res.fleshWound / 6) + ' flesh wound, ' + pct(res.serious / 6) + ' serious injury and ' +
+          pct(res.outOfAction / 6) + ' out of action.');
         if (w.rapidFire > 0) notes.push('Rapid Fire (' + w.rapidFire + '): assumes all ' + w.rapidFire +
           ' Firepower dice are rolled. Running out of ammo is not tracked.');
-        if (w.autoHit) notes.push('Template: the target is hit automatically, so hit modifiers and Shock (X+) never come into it.');
+        if (w.autoHit && !selfHit) notes.push('Template: the target is hit automatically, so hit modifiers and Shock (X+) never come into it.');
         if (w.blast && !w.autoHit) notes.push(
           '<b>Blast: a scatter of 1" or 2" is counted as a hit.</b> A missed shot scatters D6" ' +
           'in a random direction, and a 3" or 5" marker that moves only 1" or 2" still covers the ' +
@@ -1125,11 +1145,17 @@ if (typeof module !== 'undefined') module.exports = Data;
       if (inPlay.length) {
         const left = [];
         for (const p of inPlay) {
-          for (const tr of unmodelled(p.traitText)) if (left.indexOf(tr) < 0) left.push(tr);
+          for (const tr of unmodelled(p.traitText)) {
+            // In self-hit mode Unstable is the whole calculation, not something left out.
+            if (selfHit && tr.indexOf('Unstable') === 0) continue;
+            if (left.indexOf(tr) < 0) left.push(tr);
+          }
         }
         if (left.length) notes.push('Not part of this calculation: ' + left.join(', ') + '.');
         if (inPlay.some(p => p.traits.smoke)) notes.push('Smoke: a model hit by it is never wounded and is not Suppressed (p165), so there is nothing to work out.');
-        if (inPlay.some(p => p.traits.unstable)) notes.push('Unstable: on a natural 1 to hit, the firer takes a hit from this profile instead — 1 in 6 (p165).');
+        if (inPlay.some(p => p.traits.unstable) && s.a.skill !== 'unstable') notes.push(
+          'Unstable: on a natural 1 to hit, the firer takes a hit from this profile instead — 1 in 6 (p165). ' +
+          'Pick <b>Unstable</b> in the Ballistic Skill list to work out what that hit does to them.');
       }
       if (target.status !== 'active') {
         notes.push(target.status === 'seriously'
