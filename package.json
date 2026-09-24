@@ -6,8 +6,8 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node --test test/engine.test.mjs test/data.test.mjs test/montecarlo.test.mjs test/browser.test.mjs",
-    "test:fast": "node --test test/engine.test.mjs test/data.test.mjs"
+    "test": "node --test test/engine.test.mjs test/data.test.mjs test/pricing.test.mjs test/api.test.mjs test/montecarlo.test.mjs test/browser.test.mjs",
+    "test:fast": "node --test test/engine.test.mjs test/data.test.mjs test/pricing.test.mjs test/api.test.mjs"
   },
   "repository": {
     "type": "git",

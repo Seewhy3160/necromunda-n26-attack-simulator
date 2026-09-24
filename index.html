@@ -363,6 +363,7 @@ const Engine = (function () {
     const ctx = buildCtx(input);
     const w = input.weapon, t = input.target;
     const start = startState(t);
+    const from = input.from || new Map([[start, 1]]);
     const fp = firepowerDist(w.rapidFire > 0 ? w.rapidFire : 0);
     const singleHit = new Map([[1, 1]]);
     const hitCounts = w.rapidFire > 0 ? fp : singleHit;
@@ -382,11 +383,12 @@ const Engine = (function () {
     const resolveHits = (effects, weight) => {
       if (weight <= 0) return;
       for (const [n, pn] of hitCounts) {
-        let dist = new Map([[start, 1]]);
+        let dist = from;
         for (let i = 0; i < n; i++) dist = applyHit(dist, ctx, effects, true);
         for (const [k, q] of dist) addTo(out, k, weight * pn * q);
       }
     };
+    const carry = (weight) => { for (const [k, q] of from) addTo(out, k, weight * q); };
 
     let pDirect = 0, pScatterHit = 0, pMisfire = 0;
     for (const b of branches) {
@@ -399,17 +401,18 @@ const Engine = (function () {
         pScatterHit += b.p * SCATTER_COVERS;
         pMisfire += b.p * SCATTER_MISFIRE;
         resolveHits(ctx.effects, b.p * SCATTER_COVERS);
-        addTo(out, start, b.p * (1 - SCATTER_COVERS));
+        carry(b.p * (1 - SCATTER_COVERS));
       } else {
-        addTo(out, start, b.p);
+        carry(b.p);
       }
     }
 
     let expectedHits = 0;
     for (const [n, pn] of hitCounts) expectedHits += n * pn;
     const pHit = pDirect + pScatterHit;
-    return summarise(out, start, { ctx: ctx, pHit: pHit, expectedHits: pHit * expectedHits,
-                                   pScatterHit: pScatterHit, pMisfire: pMisfire });
+    return summarise(out, input.from ? startOf(input.from) : start,
+      { ctx: ctx, pHit: pHit, expectedHits: pHit * expectedHits,
+        pScatterHit: pScatterHit, pMisfire: pMisfire, distribution: out });
   }
 
   /* ---- Melee attack (p74) ----------------------------------------------
@@ -417,7 +420,7 @@ const Engine = (function () {
      in sequence, so the target's state carries from one attack to the next. */
   function computeMelee(input) {
     const start = startState(input.target);
-    let dist = new Map([[start, 1]]);
+    let dist = input.from || new Map([[start, 1]]);
     let pAnyHit = 0, expectedHits = 0;
     const problems = [];
     let firstCtx = null;
@@ -455,7 +458,8 @@ const Engine = (function () {
     }
 
     firstCtx.problems = problems;
-    return summarise(dist, start, { ctx: firstCtx, pHit: pAnyHit, expectedHits: expectedHits });
+    return summarise(dist, input.from ? startOf(input.from) : start,
+      { ctx: firstCtx, pHit: pAnyHit, expectedHits: expectedHits, distribution: dist });
   }
 
   /* ---- Reporting -------------------------------------------------------- */
@@ -478,6 +482,9 @@ const Engine = (function () {
     r.changed = 1 - probOf(dist, startId);
     r.pHit = extra.pHit;
     r.expectedHits = extra.expectedHits;
+    /* The state distribution itself, so a caller can thread one attack into
+       the next. Without this a sequence silently restarts from full health. */
+    r.distribution = extra.distribution;
     r.scatterHit = extra.pScatterHit || 0;
     r.misfire = extra.pMisfire || 0;
     r.problems = extra.ctx.problems;
@@ -489,6 +496,33 @@ const Engine = (function () {
   }
 
   function probOf(dist, id) { return dist.get(id) || 0; }
+
+  /* The least harmed state a distribution contains: what "unharmed" means when
+     a sequence of attacks is being threaded rather than starting fresh. */
+  function startOf(dist) {
+    let best = null;
+    for (const id of dist.keys()) {
+      const s = dec(id);
+      if (!best || s.cond < dec(best).cond || (s.cond === dec(best).cond && s.w > dec(best).w)) best = id;
+    }
+    return best;
+  }
+
+  /* Several attacks in turn against one target, each picking up where the last
+     left off. This is what a survivability question needs: not the odds of one
+     attack, but of everything a fighter is about to walk into. */
+  function computeSequence(attacks, target, faces) {
+    let dist = new Map([[startState(target), 1]]);
+    let last = null;
+    for (const a of attacks) {
+      const input = Object.assign({}, a, { target: target, faces: faces, from: dist });
+      last = a.weapons ? computeMelee(input) : computeRanged(input);
+      dist = last.distribution;
+    }
+    return last || summarise(dist, startState(target),
+      { ctx: { problems: [], woundTarget: 7, weapon: {}, target: target, effects: [] },
+        pHit: 0, expectedHits: 0, distribution: dist });
+  }
 
   /* Chance that a single hit wounds, and that a wound goes unsaved. */
   function perHitBreakdown(ctx) {
@@ -507,6 +541,7 @@ const Engine = (function () {
 
   return {
     computeRanged: computeRanged, computeMelee: computeMelee,
+    computeSequence: computeSequence,
     woundTarget: woundTarget, saveProb: saveProb, injuryPick: injuryPick,
     firepowerDist: firepowerDist, isHit: isHit, INJURY_DICE: INJURY_DICE,
     SCATTER_COVERS: SCATTER_COVERS, SCATTER_MISFIRE: SCATTER_MISFIRE,
@@ -660,17 +695,71 @@ const Data = (function () {
   /* Pistols keep the Light trait, so they can be swung in close combat (p74). */
   const meleeUsable = melee.concat(ranged.filter(p => p.traits.light));
 
-  /* Fighter profiles. The core rules print exactly one full profile (p50).
-     The rest are the common fighter types, for quick setup; their Toughness,
-     Strength, Wounds and Save are the usual values, while WS, BS, Initiative
-     and Attacks vary by gang and are rounded here. */
+  /* Real fighter profiles from the six House gang lists, with their costs.
+     [name, gang, cost, WS, BS, S, T, W, I, A, Sv] */
+  const GANG_FIGHTERS = [
+    ['Forge Tyrant', 'Goliath', 140, 3, 3, 3, 4, 3, 4, 3, 5],
+    ['Forge Boss', 'Goliath', 100, 3, 3, 3, 4, 2, 3, 2, 5],
+    ['Stimmer', 'Goliath', 120, 3, 4, 4, 4, 2, 4, 3, 5],
+    ['Bruiser', 'Goliath', 45, 4, 4, 3, 4, 1, 3, 1, 6],
+    ['Forge-Born', 'Goliath', 35, 5, 5, 3, 4, 1, 3, 1, 6],
+    ['Bully', 'Goliath', 25, 5, 5, 3, 4, 1, 3, 1, 6],
+    ["'Zerker", 'Goliath', 175, 3, 6, 6, 5, 4, 2, 3, 6],
+    ['Sumpkroc', 'Goliath', 65, 3, 6, 3, 3, 1, 2, 2, 5],
+    ['Forge Despot', 'Goliath', 140, 3, 3, 3, 4, 3, 4, 3, 5],
+    ['Forge Master', 'Goliath', 105, 3, 3, 3, 4, 2, 3, 2, 5],
+    ['Unborn Doc', 'Goliath', 145, 3, 3, 3, 4, 3, 4, 3, 5],
+    ['Twice Born', 'Goliath', 100, 3, 3, 3, 4, 2, 3, 2, 5],
+    ['Malformed', 'Goliath', 80, 4, 6, 4, 4, 2, 2, 2, 6],
+    ['Forge Breaker', 'Goliath', 70, 4, 4, 3, 4, 1, 3, 2, 6],
+    ['Forge Gunner', 'Goliath', 60, 4, 4, 3, 4, 1, 3, 1, 6],
+    ['Master of Shadow', 'Delaque', 140, 3, 3, 3, 3, 3, 4, 3, 5],
+    ['Phantom', 'Delaque', 100, 3, 3, 3, 3, 2, 4, 2, 5],
+    ['Nacht-Ghul', 'Delaque', 120, 3, 4, 4, 3, 2, 5, 3, 5],
+    ['Ghost', 'Delaque', 45, 4, 4, 3, 3, 1, 4, 1, 6],
+    ['Psy-Gheist', 'Delaque', 30, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Shadow', 'Delaque', 25, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Piscean Spektor', 'Delaque', 250, 3, 5, 4, 4, 4, 4, 2, 5],
+    ['Cephalopod Spektor', 'Delaque', 75, 4, 5, 2, 3, 1, 4, 1, 6],
+    ['Psychoteric Wyrm', 'Delaque', 50, 4, 6, 2, 3, 1, 3, 1, 6],
+    ['Gang Queen', 'Escher', 135, 3, 3, 3, 3, 3, 5, 3, 5],
+    ['Gang Matriarch', 'Escher', 100, 3, 3, 3, 3, 2, 5, 2, 5],
+    ['Death-Maiden', 'Escher', 130, 3, 3, 3, 4, 2, 5, 3, 5],
+    ['Gang Sister', 'Escher', 40, 4, 4, 3, 3, 1, 4, 1, 6],
+    ['Wyld Runner', 'Escher', 30, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Little Sister', 'Escher', 25, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Khimerix', 'Escher', 220, 4, 4, 4, 5, 4, 4, 3, 6],
+    ['Phyrr Cat', 'Escher', 80, 3, 6, 3, 3, 1, 5, 2, 6],
+    ['Phelynx', 'Escher', 60, 4, 6, 2, 3, 1, 4, 2, 6],
+    ['Road Captain', 'Orlock', 115, 3, 3, 3, 3, 3, 3, 2, 5],
+    ['Road Sergeant', 'Orlock', 100, 3, 3, 3, 3, 2, 3, 2, 5],
+    ['Arms Master', 'Orlock', 110, 3, 4, 3, 4, 2, 3, 2, 5],
+    ['Gunner', 'Orlock', 40, 4, 4, 3, 3, 1, 3, 1, 6],
+    ['Wrecker', 'Orlock', 65, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Greenhorn', 'Orlock', 20, 5, 5, 3, 3, 1, 4, 1, 6],
+    ['Cyber-Mastiff', 'Orlock', 65, 3, 6, 3, 3, 1, 4, 1, 6],
+    ['Prime', 'Van Saar', 115, 3, 3, 3, 3, 3, 3, 2, 5],
+    ['Augmek', 'Van Saar', 95, 3, 3, 3, 3, 2, 3, 2, 5],
+    ['Archeotek', 'Van Saar', 85, 4, 3, 3, 3, 2, 2, 1, 4],
+    ['Tek', 'Van Saar', 30, 4, 4, 3, 3, 1, 2, 1, 6],
+    ['Neotek', 'Van Saar', 65, 5, 5, 3, 3, 1, 3, 1, 6],
+    ['Subtek', 'Van Saar', 20, 5, 5, 3, 3, 1, 3, 1, 6],
+    ['Cyberachnid', 'Van Saar', 90, 4, 5, 2, 2, 1, 5, 1, 6]
+  ].map(r => ({ name: r[0] + ' (' + r[1] + ', ' + r[2] + 'c)', gang: r[1], cost: r[2],
+                ws: r[3], bs: r[4], S: r[5], T: r[6], W: r[7], I: r[8], A: r[9], sv: r[10] }));
+
+  /* Fighter profiles. The core rules print exactly one full profile (p50) —
+     which turns out to be the Escher Gang Sister, exactly as her gang list
+     gives her. The rest are the common types, for quick setup. */
   const FIGHTERS = [
     { name: 'Escher Gang Sister (core rules example, p50)', book: true,
       ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
     { name: 'Ganger', ws: 4, bs: 4, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
     { name: 'Champion', ws: 3, bs: 3, S: 3, T: 3, W: 2, I: 4, A: 2, sv: 5 },
     { name: 'Leader', ws: 3, bs: 3, S: 3, T: 3, W: 3, I: 4, A: 2, sv: 5 },
-    { name: 'Juve', ws: 5, bs: 5, S: 3, T: 3, W: 1, I: 3, A: 1, sv: 0 },
+    /* Every Prospect across the six lists is WS5+ BS5+ S3 W1 Sv6+; only the
+       Goliath ones differ, at T4. Corrected from those rather than guessed. */
+    { name: 'Prospect / Juve', ws: 5, bs: 5, S: 3, T: 3, W: 1, I: 4, A: 1, sv: 6 },
     { name: 'Brute', ws: 4, bs: 5, S: 5, T: 4, W: 4, I: 4, A: 2, sv: 4 }
   ];
 
@@ -803,7 +892,15 @@ const Data = (function () {
 
   const priceOf = (p) => p.creds !== undefined ? p.creds : COSTS[p.name];
 
-  return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits,
+  /* Fighter list, widened by the same switch that widens the weapons. */
+  function fightersFor(opts) {
+    if (!opts || !opts.includeGang) return FIGHTERS;
+    return FIGHTERS.concat(GANG_FIGHTERS.filter(
+      f => !opts.gang || opts.gang === 'all' || f.gang === opts.gang));
+  }
+
+  return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS,
+           gangFighters: GANG_FIGHTERS, fightersFor: fightersFor, parseTraits: parseTraits,
            costs: COSTS, isMultiProfile: isMultiProfile,
            gangRanged: gangRanged, gangMelee: gangMelee, gangs: GANGS,
            weapons: weapons, priceOf: priceOf, tradePoints: TRADE_POINTS };
@@ -1190,6 +1287,228 @@ const Pricing = (function () {
 if (typeof module !== 'undefined') module.exports = Pricing;
 </script>
 
+<script id="api">
+/* ==========================================================================
+   API — the supported surface for other programs. Everything else in this file
+   is internal and may be renamed without notice.
+
+   In a browser, load the page and read `window.Necromunda`. In Node, pull the
+   engine, data, pricing and api blocks out of this file and evaluate them in
+   one scope; the result is on `module.exports`. See API.md.
+   ========================================================================== */
+const Necromunda = (function () {
+  'use strict';
+  const VERSION = '1.0.0';
+
+  const clone = (o) => Object.assign({}, o);
+  const err = (m) => { throw new Error('Necromunda: ' + m); };
+
+  /* ---- turning friendly input into what the engine wants ---------------- */
+
+  const WEAPON_DEFAULTS = {
+    str: 4, ap: 0, lethality: 1, damage: 1, rapidFire: 0,
+    toxin: 0, rending: 0, shred: 0, breaching: 0, shock: 0, blaze: 0,
+    gas: false, web: false, flash: false, graviton: false,
+    autoHit: false, blast: false, unstable: false
+  };
+
+  /* A catalogue entry carries its traits already parsed; a caller's own object
+     may name them however the rules do. Both end up in the same shape. */
+  function fromCatalogue(p, attackerStrength) {
+    const t = p.traits;
+    let str = p.str;
+    if (typeof str === 'string') {
+      const m = str.match(/^S(?:\+(\d))?$/);
+      if (m) {
+        if (attackerStrength === undefined) {
+          err('"' + p.name + '" uses the wielder\u2019s Strength, so attacker.S is required');
+        }
+        str = attackerStrength + (m[1] ? +m[1] : 0);
+      }
+    }
+    return Object.assign(clone(WEAPON_DEFAULTS), {
+      str: (str === null || str === undefined) ? null : str,
+      ap: p.ap || 0,
+      lethality: p.lethality === null ? 0 : p.lethality,
+      damage: t.damage, rapidFire: t.rapidFire,
+      toxin: t.toxin, rending: t.rending, shred: t.shred, breaching: t.breaching,
+      shock: t.shock, blaze: t.blaze,
+      gas: t.gas, web: t.web, flash: t.flash, graviton: t.graviton,
+      autoHit: t.autoHit, blast: t.blast, unstable: t.unstable
+    });
+  }
+
+  function findWeapon(name, opts) {
+    const all = Data.weapons('ranged', opts).concat(Data.weapons('melee', opts));
+    return all.find(w => w.name === name);
+  }
+
+  function weaponOf(w, opts, attackerStrength) {
+    if (typeof w === 'string') {
+      const p = findWeapon(w, opts) ||
+        err('no weapon called "' + w + '". Gang list weapons need { gang: true } in options.');
+      return fromCatalogue(p, attackerStrength);
+    }
+    if (!w || typeof w !== 'object') err('a weapon must be a name or a profile object');
+    return Object.assign(clone(WEAPON_DEFAULTS), w);
+  }
+
+  const TARGET_DEFAULTS = {
+    T: 3, W: 1, sv: 0, inv: 0, saveMods: 0, status: 'active',
+    initiative: 4, strength: 3, respirator: false
+  };
+
+  function targetOf(t, opts) {
+    if (typeof t === 'string') {
+      const f = Data.fightersFor(opts).find(x => x.name === t || x.name.indexOf(t + ' (') === 0) ||
+        err('no fighter called "' + t + '". Gang profiles need { gang: true } in options.');
+      return Object.assign(clone(TARGET_DEFAULTS),
+        { T: f.T, W: f.W, sv: f.sv, initiative: f.I, strength: f.S });
+    }
+    if (!t || typeof t !== 'object') err('a target must be a name or a profile object');
+    return Object.assign(clone(TARGET_DEFAULTS), t);
+  }
+
+  const scopeOf = (o) => o && o.gang
+    ? { includeGang: true, gang: typeof o.gang === 'string' ? o.gang : 'all' }
+    : { includeGang: false, gang: 'all' };
+
+  /* Only the fields a caller should rely on. */
+  function report(r) {
+    return {
+      fleshWound: r.fleshWound, serious: r.serious, outOfAction: r.outOfAction,
+      wounded: r.wounded, unharmed: r.unharmed,
+      anyInjury: r.fleshWound + r.serious + r.outOfAction,
+      takenOut: r.outOfAction,
+      webbed: r.webbed, blinded: r.blinded,
+      expectedWoundsLost: r.expectedWoundsLost,
+      chanceToHit: r.pHit, expectedHits: r.expectedHits,
+      chanceAHitWounds: r.perHit.pWound,
+      scatterHit: r.scatterHit, misfire: r.misfire,
+      problems: r.problems.slice()
+    };
+  }
+
+  /* ---- one attack -------------------------------------------------------- */
+
+  function shoot(o) {
+    o = o || {};
+    const opts = scopeOf(o);
+    return report(Engine.computeRanged({
+      skill: o.bs || o.skill || err('shoot() needs bs'),
+      hitMod: o.hitMod || 0,
+      weapon: weaponOf(o.weapon || err('shoot() needs a weapon'), opts),
+      target: targetOf(o.target || err('shoot() needs a target'), opts),
+      faces: Engine.INJURY_DICE
+    }));
+  }
+
+  function fight(o) {
+    o = o || {};
+    const opts = scopeOf(o);
+    const S = o.strength;
+    const list = (o.weapons || [{ weapon: o.weapon, attacks: o.attacks || 1 }]);
+    return report(Engine.computeMelee({
+      weapons: list.map(x => ({
+        weapon: weaponOf(x.weapon || err('fight() needs a weapon'), opts, S),
+        attacks: x.attacks || 1,
+        skill: x.ws || o.ws || err('fight() needs ws'),
+        hitMod: x.hitMod === undefined ? (o.hitMod || 0) : x.hitMod
+      })),
+      target: targetOf(o.target || err('fight() needs a target'), opts),
+      faces: Engine.INJURY_DICE
+    }));
+  }
+
+  /* ---- a sequence of attacks against one fighter --------------------------
+     What a survivability question needs: not the odds of one attack, but of
+     everything the fighter is about to walk into. Each attack picks up where
+     the last one left off. */
+  function survive(o) {
+    o = o || {};
+    const opts = scopeOf(o);
+    const target = targetOf(o.target || err('survive() needs a target'), opts);
+    const attacks = (o.attacks || err('survive() needs an attacks list')).map(a => {
+      if (a.weapons || (a.ws && !a.bs)) {
+        const list = a.weapons || [{ weapon: a.weapon, attacks: a.attacks || 1 }];
+        return { weapons: list.map(x => ({
+          weapon: weaponOf(x.weapon, opts, a.strength),
+          attacks: x.attacks || 1, skill: x.ws || a.ws, hitMod: x.hitMod || a.hitMod || 0 })) };
+      }
+      return { skill: a.bs, hitMod: a.hitMod || 0, weapon: weaponOf(a.weapon, opts) };
+    });
+    const r = report(Engine.computeSequence(attacks, target, Engine.INJURY_DICE));
+    r.survives = 1 - r.outOfAction;
+    r.unharmedThroughout = r.unharmed;
+    return r;
+  }
+
+  /* ---- catalogue and prices, for a list builder --------------------------- */
+
+  function catalogue(o) {
+    const opts = scopeOf(o);
+    const one = (p, kind) => ({
+      name: p.name, kind: kind, category: p.cat, gang: p.gang || null,
+      shortRange: p.sr, longRange: p.lr, str: p.str, ap: p.ap,
+      lethality: p.lethality, traits: p.traitText,
+      /* null means not purchasable: the hand weapon every fighter counts as
+         carrying is the only one in the list. */
+      credits: Data.priceOf(p) === undefined ? null : Data.priceOf(p),
+      tradePoints: Data.tradePoints[p.name] === undefined ? null : Data.tradePoints[p.name],
+      multiProfile: Data.isMultiProfile(p.name)
+    });
+    return {
+      ranged: Data.weapons('ranged', opts).map(p => one(p, 'ranged')),
+      melee: Data.weapons('melee', opts).filter(p => p.traits.melee).map(p => one(p, 'melee')),
+      fighters: Data.fightersFor(opts).map(f => ({
+        name: f.name, gang: f.gang || null, credits: f.cost === undefined ? null : f.cost,
+        ws: f.ws, bs: f.bs, S: f.S, T: f.T, W: f.W, I: f.I, A: f.A, sv: f.sv,
+        fromBook: !!f.book
+      }))
+    };
+  }
+
+  /* What the market charges per stat, and what each weapon is worth against
+     its own stat line. Prices only — this says nothing about effectiveness. */
+  function priceModel(o) {
+    const M = Pricing.build(scopeOf(o));
+    const strip = (m) => ({
+      weaponsFitted: m.n,
+      meanErrorCredits: m.additiveError,
+      meanErrorIfMultiplier: m.multiplicativeError,
+      shape: m.better === 'additive' ? 'flat rates' : 'multipliers',
+      coefficients: m.coefficients.map(c => ({
+        feature: c.name, credits: c.credits, multiplier: c.factor,
+        weaponsCarrying: c.weapons, heldAtZero: !!c.pinned
+      })),
+      weapons: m.residuals.map(r => ({
+        name: r.name, credits: r.cost, modelSays: r.model,
+        difference: r.diff, heldOutOfFit: r.held
+      }))
+    });
+    return { ranged: strip(M.ranged), melee: strip(M.melee) };
+  }
+
+  function valueOf(name, o) {
+    const M = priceModel(o);
+    const hit = M.ranged.weapons.find(w => w.name === name) ||
+                M.melee.weapons.find(w => w.name === name) ||
+                err('no priced weapon called "' + name + '"');
+    return hit;
+  }
+
+  return {
+    version: VERSION,
+    shoot: shoot, fight: fight, survive: survive,
+    catalogue: catalogue, priceModel: priceModel, valueOf: valueOf,
+    INJURY_DICE: Engine.INJURY_DICE,
+    gangs: Data.gangs.slice()
+  };
+})();
+if (typeof window !== 'undefined') window.Necromunda = Necromunda;
+if (typeof module !== 'undefined') module.exports = Necromunda;
+</script>
+
 <script id="ui">
 /* ==========================================================================
    UI — builds both calculators from a field spec, recomputes on every change.
@@ -1288,9 +1607,18 @@ if (typeof module !== 'undefined') module.exports = Pricing;
     }
     return [['', 'Pick a profile...']].concat(cats);
   }
-  const FIGHTER_OPTS = [['', 'Pick a profile...'],
-    ['group', 'From the core rules', Data.fighters.filter(f => f.book).map(f => [f.name, f.name])],
-    ['group', 'Common fighter types', Data.fighters.filter(f => !f.book).map(f => [f.name, f.name])]];
+  function fighterOpts(opts) {
+    const list = Data.fightersFor(opts);
+    const groups = [['group', 'From the core rules', list.filter(f => f.book).map(f => [f.name, f.name])],
+                    ['group', 'Common fighter types',
+                     list.filter(f => !f.book && !f.gang).map(f => [f.name, f.name])]];
+    for (const g of Data.gangs) {
+      const of = list.filter(f => f.gang === g);
+      if (of.length) groups.push(['group', g, of.map(f => [f.name, f.name])]);
+    }
+    return [['', 'Pick a profile...']].concat(groups);
+  }
+  const FIGHTER_OPTS = fighterOpts(null);
 
   /* ---- trait bookkeeping ------------------------------------------------
      Traits the calculator actually uses, so the rest can be named plainly
@@ -1616,11 +1944,11 @@ if (typeof module !== 'undefined') module.exports = Pricing;
         if (p) { applyWeapon(root, 'w2', p, true); setControl(root, 'a.useSecondary', true); }
       }
       if (st.pick.fighter && st.pick.fighter !== lastPick.fighter) {
-        const f = Data.fighters.find(x => x.name === st.pick.fighter);
+        const f = Data.fightersFor(scope).find(x => x.name === st.pick.fighter);
         if (f) applyFighter(root, f, !melee, melee);
       }
       if (melee && st.pick.fighter2 && st.pick.fighter2 !== lastPick.fighter2) {
-        const f = Data.fighters.find(x => x.name === st.pick.fighter2);
+        const f = Data.fightersFor(scope).find(x => x.name === st.pick.fighter2);
         if (f) applyFighter(root, f, true, true);
       }
       lastPick = { weapon: st.pick.weapon, weapon2: st.pick.weapon2,
@@ -1872,11 +2200,13 @@ if (typeof module !== 'undefined') module.exports = Pricing;
      for, so the pickers are not swamped by kit most gangs cannot buy. */
   const scope = { includeGang: false, gang: 'all' };
 
-  function repopulate(sel, list, keepValue) {
+  function repopulate(sel, list, keepValue, groupBy) {
+    const key = groupBy || 'cat';
     const cats = [];
     for (const p of list) {
-      let c = cats.find(x => x.name === p.cat);
-      if (!c) { c = { name: p.cat, items: [] }; cats.push(c); }
+      const g = p[key] || 'Common fighter types';
+      let c = cats.find(x => x.name === g);
+      if (!c) { c = { name: g, items: [] }; cats.push(c); }
       c.items.push(p.name);
     }
     sel.innerHTML = '';
@@ -1897,21 +2227,25 @@ if (typeof module !== 'undefined') module.exports = Pricing;
         const sel = root.querySelector('[data-bind="' + b + '"]');
         if (sel) repopulate(sel, list, sel.value);
       }
+      const fighters = Data.fightersFor(scope);
+      for (const b of ['pick.fighter', 'pick.fighter2']) {
+        const sel = root.querySelector('[data-bind="' + b + '"]');
+        if (sel) repopulate(sel, fighters, sel.value, 'gang');
+      }
       root.dispatchEvent(new Event('change'));
     }
     valueRoot.innerHTML = '';
     buildValue(valueRoot, scope);
 
-    const n = Data.gangRanged.length + Data.gangMelee.length;
-    const shown = scope.includeGang
-      ? (scope.gang === 'all' ? n
-         : Data.gangRanged.concat(Data.gangMelee).filter(w => w.gang === scope.gang).length)
-      : 0;
+    const all = Data.gangRanged.concat(Data.gangMelee);
+    const pick = (list) => scope.gang === 'all' ? list : list.filter(x => x.gang === scope.gang);
+    const w = pick(all).length, f = pick(Data.gangFighters).length;
     document.getElementById('opt-note').textContent = scope.includeGang
-      ? 'Showing the Trading Post plus ' + shown + ' weapon' + (shown === 1 ? '' : 's') +
-        ' the ' + (scope.gang === 'all' ? 'House lists' : scope.gang + ' list') +
-        ' sell that it does not. Both price the same weapons alike, so the two mix safely.'
-      : 'Trading Post only. Tick the box to add weapons sold on the House gang lists.';
+      ? 'Showing the Trading Post plus ' + w + ' weapon' + (w === 1 ? '' : 's') + ' and ' +
+        f + ' fighter profile' + (f === 1 ? '' : 's') + ' from the ' +
+        (scope.gang === 'all' ? 'House lists' : scope.gang + ' list') +
+        '. Both price the same weapons alike, so the two mix safely.'
+      : 'Trading Post and core rules only. Tick the box to add the House gang lists.';
   }
 
   /* ---- boot -------------------------------------------------------------- */

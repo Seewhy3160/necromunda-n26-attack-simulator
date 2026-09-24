@@ -16,6 +16,21 @@ Artifact mirror: `https://claude.ai/artifact/Vurot5nfVQ58NxWuysPv25`
 **The optimiser exists nowhere but the user's zip and this container.** If it is
 wanted on GitHub it needs a new repo; that was offered and not taken up.
 
+## The API
+
+`window.Necromunda`, documented in **API.md**, is the supported surface for other
+programs — a survivability calculator, a list builder. Everything else in
+`index.html` is internal. `test/api.test.mjs` is the contract; changing it
+breaks consumers, so change it deliberately.
+
+- `shoot` / `fight` — one attack, taking a weapon by name or as a profile.
+- `survive` — several attacks threaded through one target, wounds carrying
+  across. This is the survivability primitive and is *not* the same as
+  multiplying single-attack odds, because a wounded fighter is easier to finish.
+- `catalogue` / `priceModel` / `valueOf` — what a list builder needs.
+
+Gang material is off unless a call passes `gang: true` or names a House.
+
 ## How they fit together
 
 The simulator is the single source of truth for rules maths *and* for weapon
@@ -85,7 +100,10 @@ Every one of these was a bug the user caught. They are enforced by tests in
 
 ## Open threads
 
-1. **The optimiser's `analyse-pricing.mjs` has an unfinished edit.** A section
+1. **The optimiser still scrapes script blocks directly** rather than going
+   through the API added later. It works and its tests pass, but `loadApi()` in
+   `test/load.mjs` is now the documented path and the optimiser should move to it.
+2. **The optimiser's `analyse-pricing.mjs` has an unfinished edit.** A section
    pooling the gang lists into the fit was drafted and *not applied* — the patch
    failed its assertion and nothing was written. The data file
    `data/gang-lists.mjs` **is** committed and correct. Wiring the extended fit
@@ -93,23 +111,22 @@ Every one of these was a bug the user caught. They are enforced by tests in
    run by hand: melee goes from 20 weapons at ±2.42c to 38 at ±2.39c, and
    Paired (X) becomes estimable at about +7.8c where the Trading Post had no
    examples at all.
-2. **Trade Points are shown but not modelled.** The Value tab displays them and
+3. **Trade Points are shown but not modelled.** The Value tab displays them and
    explains that they are the real House advantage, but no figure prices them,
    because TP is not denominated in credits and the list gives no exchange rate.
    A TP model would need an assumption about what a Trade Point is worth.
-3. **The Juve fighter preset still carries invented stats.** Every other preset
-   was corrected by the user; that one was never reviewed.
-4. **WS, BS, Initiative and Attacks** on the fighter presets are rounded and were
-   never checked — the user's corrections covered Strength, Toughness, Wounds
-   and Save only.
-5. **Template may scale with weapon cost.** Residuals slope +0.31 against price
+4. **Template may scale with weapon cost.** Residuals slope +0.31 against price
    across the seven Template weapons, which is what a multiplier would look like.
    Seven weapons is too few to act on and the whole-list comparison says the
    market charges flat rates, so it is recorded and not acted on.
 
 ## Working notes
 
-- `npm test` in the simulator runs 75 tests, including a Monte-Carlo simulator
+- The invented fighter archetypes were replaced by ~47 real profiles from the six
+  gang lists, behind the same gang switch. The Juve archetype, previously the one
+  never reviewed, was corrected against the real Prospects. The core rules' worked
+  example profile turns out to be the Escher Gang Sister exactly.
+- `npm test` in the simulator runs 105 tests, including a Monte-Carlo simulator
   that rolls its own dice and must agree with the exact engine. It is
   deliberately an independent implementation — **do not make it share code.**
 - Browser tests need Playwright and fall back to a preinstalled Chromium at

@@ -21,3 +21,12 @@ export function loadPricing() {
   const grab = (id) => src.match(new RegExp(`<script id="${id}">([\\s\\S]*?)<\\/script>`))[1];
   return new Function('module', grab('data') + '\n' + grab('pricing') + '\nreturn Pricing;')({ exports: {} });
 }
+
+/** The public API, with everything it depends on evaluated in one scope. */
+export function loadApi() {
+  const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const grab = (id) => src.match(new RegExp(`<script id="${id}">([\\s\\S]*?)<\\/script>`))[1];
+  return new Function('module',
+    grab('engine') + '\n' + grab('data') + '\n' + grab('pricing') + '\n' + grab('api') +
+    '\nreturn Necromunda;')({ exports: {} });
+}

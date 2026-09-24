@@ -333,7 +333,7 @@ t('gang list weapons are off by default and can be switched on per House', async
   const count = () => page.$$eval('#panel-ranged [data-bind="pick.weapon"] option', o => o.length);
   const tradingPostOnly = await count();
   assert.equal(await page.isVisible('#opt-which'), false, 'the gang picker hides until asked for');
-  assert.match(await page.textContent('#opt-note'), /Trading Post only/);
+  assert.match(await page.textContent('#opt-note'), /Trading Post and core rules only/);
 
   await page.setChecked('#opt-gang', true);
   assert.equal(await page.isVisible('#opt-which'), true);
@@ -351,8 +351,16 @@ t('gang list weapons are off by default and can be switched on per House', async
   assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.toxin"]'), '3');
   assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.rapidFire"]'), '1');
 
+  // Fighter profiles widen with the same switch.
+  const fighters = () => page.$$eval('#panel-ranged [data-bind="pick.fighter"] option', o => o.length);
+  const withDelaqueFighters = await fighters();
+  await page.selectOption('#panel-ranged [data-bind="pick.fighter"]', 'Ghost (Delaque, 45c)');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="t.sv"]'), '6');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="t.W"]'), '1');
+
   await page.setChecked('#opt-gang', false);
   assert.equal(await count(), tradingPostOnly, 'unticking should restore the Trading Post list');
+  assert.ok(await fighters() < withDelaqueFighters, 'and should drop the gang fighters too');
 });
 
 t('the Value tab shows Trade Points and explains the House advantage', async () => {
