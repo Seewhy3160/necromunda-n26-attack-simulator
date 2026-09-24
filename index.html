@@ -89,6 +89,16 @@ details p{margin:0 0 8px;font-size:13px;color:var(--ink-dim)}
 details code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px}
 .note{font-size:12px;color:var(--ink-faint);margin:6px 0 0}
 .hidden{display:none !important}
+table.val{width:100%;border-collapse:collapse;font-size:13.5px;margin:2px 0 0}
+table.val th{text-align:left;font-weight:600;color:var(--ink-dim);font-size:11.5px;
+  text-transform:uppercase;letter-spacing:.4px;padding:0 6px 6px 0;border-bottom:1px solid var(--line)}
+table.val td{padding:7px 6px 7px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+table.val tr:last-child td{border-bottom:0}
+table.val td.n{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+table.val td.good{color:var(--ok);font-weight:600}
+table.val td.bad{color:var(--ooa);font-weight:600}
+.fitline{font-size:12.5px;color:var(--ink-dim);margin:0 0 10px}
+.fitline b{color:var(--ink);font-family:ui-monospace,Menlo,monospace}
 footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px 0;line-height:1.6}
 @media (max-width:380px){ .odd .v{font-size:21px} }
 @media (prefers-reduced-motion:no-preference){ .bar i{transition:width .15s ease} }
@@ -104,10 +114,12 @@ footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px
 <div class="tabs" role="tablist">
   <button role="tab" id="tab-ranged" aria-controls="panel-ranged" aria-selected="true">Ranged</button>
   <button role="tab" id="tab-melee" aria-controls="panel-melee" aria-selected="false">Melee</button>
+  <button role="tab" id="tab-value" aria-controls="panel-value" aria-selected="false">Value</button>
 </div>
 
 <section id="panel-ranged" role="tabpanel" aria-labelledby="tab-ranged"></section>
 <section id="panel-melee" role="tabpanel" aria-labelledby="tab-melee" class="hidden"></section>
+<section id="panel-value" role="tabpanel" aria-labelledby="tab-value" class="hidden"></section>
 
 <footer>
   Unofficial fan-made tool. Necromunda is a trademark of Games Workshop Ltd.<br>
@@ -645,9 +657,204 @@ const Data = (function () {
     { name: 'Brute', ws: 4, bs: 5, S: 5, T: 4, W: 4, I: 4, A: 2, sv: 4 }
   ];
 
-  return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits };
+  /* Trading Post prices (p154-157). The Trading Post is the authority here;
+     gang equipment lists price some of the same weapons differently.
+     The hand weapon has no entry — every fighter counts as carrying one. */
+  const COSTS = {
+    'Autogun': 20, 'Autopistol': 10, 'Heavy stubber': 70, 'Long rifle': 55, 'Stub gun': 5,
+    'Boltgun': 55, 'Bolt pistol': 45, 'Heavy bolter': 100, 'Warpstorm bolter': 65,
+    'Flamer': 70, 'Hand flamer': 45, 'Heavy flamer': 95,
+    'Grav gun': 50, 'Grav pistol': 40,
+    'Grenade launcher - frag': 80, 'Grenade launcher - krak': 80,
+    'Grenade launcher - photon flash': 95, 'Grenade launcher - smoke': 95,
+    'Lasgun': 15, 'Laspistol': 5, 'Long las': 40,
+    'Meltagun': 140, 'Multi-melta': 150,
+    'Plasma cannon': 115, 'Plasma gun': 85, 'Plasma pistol': 70,
+    'Throwing knives': 10, 'Rad cannon': 55, 'Rad gun': 60, 'Harpoon launcher': 80,
+    'Las cutter': 80, 'Mining laser': 125,
+    'Combat shotgun - salvo ammo': 35, 'Combat shotgun - shredder ammo': 35,
+    'Sawn-off shotgun - scatter shot': 30, 'Sawn-off shotgun - solid shot': 30,
+    'Shotgun - scatter ammo': 35, 'Shotgun - solid ammo': 35,
+    'Needle pistol': 25, 'Needle rifle': 45, 'Web gun': 65, 'Web pistol': 50,
+    'Blasting charges': 60, 'Choke gas grenades': 45, 'Demo charges': 85,
+    'Frag grenades': 30, 'Incendiary charges': 40, 'Krak grenades': 45,
+    'Phosphor canisters': 65, 'Photon flash grenades': 15, 'Plasma grenades': 70,
+    'Rad grenades': 25, 'Smoke grenades': 15,
+    'Chainaxe': 20, 'Chainsword': 20, 'Power axe': 40, 'Power fist': 105,
+    'Power hammer': 40, 'Power knife': 30, 'Power maul': 45, 'Power sword': 40,
+    'Axe': 15, 'Fighting knife': 5, 'Flail': 10, 'Maul': 20,
+    'Two-handed axe': 40, 'Two-handed hammer': 40, 'Servo-claw': 40,
+    'Shock baton': 20, 'Shock stave': 25, 'Shock whip': 10,
+    'Stiletto knife': 25, 'Stiletto sword': 45
+  };
+
+  /* One price buys every profile of these, so a single profile understates what
+     the credits bought. They are scored but held out of the fit. */
+  const MULTI_PROFILE = [
+    'Combat shotgun', 'Sawn-off shotgun', 'Shotgun -', 'Grenade launcher'
+  ];
+  const isMultiProfile = (name) => MULTI_PROFILE.some(p => name.indexOf(p) === 0);
+
+  return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits,
+           costs: COSTS, isMultiProfile: isMultiProfile };
 })();
 if (typeof module !== 'undefined') module.exports = Data;
+</script>
+
+<script id="pricing">
+/* ==========================================================================
+   PRICING — what the Trading Post charges per stat, fitted from its own prices.
+   This asks nothing about how good a weapon is, only what the market bills for
+   a point of Strength, a point of AP, a Lethality step and so on.
+   ========================================================================== */
+const Pricing = (function () {
+  'use strict';
+
+  /* Ridge rather than plain least squares: there are only ~40 usable weapons and
+     good weapons tend to be good at everything, so Strength, AP and Lethality
+     move together and an unpenalised fit swings wildly on one weapon. */
+  const LAMBDA = 3;
+
+  function solve(A, b) {
+    const n = A.length;
+    const M = A.map((row, i) => row.concat([b[i]]));
+    for (let col = 0; col < n; col++) {
+      let piv = col;
+      for (let r = col + 1; r < n; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+      if (Math.abs(M[piv][col]) < 1e-12) continue;
+      const t = M[col]; M[col] = M[piv]; M[piv] = t;
+      for (let r = 0; r < n; r++) {
+        if (r === col) continue;
+        const f = M[r][col] / M[col][col];
+        for (let c = col; c <= n; c++) M[r][c] -= f * M[col][c];
+      }
+    }
+    return M.map((row, i) => Math.abs(row[i]) < 1e-12 ? 0 : row[n] / row[i]);
+  }
+
+  function ridge(rows, y, lambda) {
+    const n = rows.length, p = rows[0].length, mean = [], sd = [];
+    for (let j = 0; j < p; j++) {
+      const col = rows.map(r => r[j]);
+      const m = col.reduce((a, b) => a + b, 0) / n;
+      const s = Math.sqrt(col.reduce((a, b) => a + (b - m) * (b - m), 0) / n) || 1;
+      mean.push(m); sd.push(s);
+    }
+    const Z = rows.map(r => r.map((v, j) => (v - mean[j]) / sd[j]));
+    const yMean = y.reduce((a, b) => a + b, 0) / y.length;
+    const yc = y.map(v => v - yMean);
+    const XtX = [], Xty = [];
+    for (let i = 0; i < p; i++) {
+      XtX.push([]);
+      for (let j = 0; j < p; j++) {
+        XtX[i].push(Z.reduce((a, r) => a + r[i] * r[j], 0) + (i === j ? lambda : 0));
+      }
+      Xty.push(Z.reduce((a, r, k) => a + r[i] * yc[k], 0));
+    }
+    const bz = solve(XtX, Xty);
+    const coef = bz.map((b, j) => b / sd[j]);
+    const intercept = yMean - coef.reduce((a, b, j) => a + b * mean[j], 0);
+    const pred = rows.map(r => intercept + r.reduce((a, v, j) => a + v * coef[j], 0));
+    const ssRes = y.reduce((a, v, i) => a + (v - pred[i]) * (v - pred[i]), 0);
+    const ssTot = y.reduce((a, v) => a + (v - yMean) * (v - yMean), 0);
+    return { coef: coef, intercept: intercept, pred: pred,
+             r2: 1 - ssRes / ssTot,
+             mae: y.reduce((a, v, i) => a + Math.abs(v - pred[i]), 0) / n };
+  }
+
+  const inches = (s) => { const m = String(s).match(/(\d+)/); return m ? +m[1] : 0; };
+
+  function rangedFeatures(p) {
+    const t = p.traits, txt = p.traitText || '';
+    const ammo = (function () { const m = txt.match(/Ammo \((\d)\+\)/); return m ? +m[1] : 0; })();
+    return {
+      'Strength': typeof p.str === 'number' ? p.str : 0,
+      'no Strength': typeof p.str === 'number' ? 0 : 1,
+      'AP, per point': -p.ap,
+      'Lethality': p.lethality || 0,
+      'Damage (X) over 1': t.damage - 1,
+      'Rapid Fire, per die': t.rapidFire,
+      'Short range, per inch': inches(p.sr),
+      'Long range, per inch': inches(p.lr),
+      'Template': t.autoHit ? 1 : 0,
+      'Blast': t.blast ? 1 : 0,
+      'Ammo, chance of running dry': ammo ? (ammo - 1) / 6 : 0,
+      'Unstable': t.unstable ? 1 : 0,
+      'Limited': /Limited/.test(txt) ? 1 : 0,
+      'Single Shot': /Single Shot/.test(txt) ? 1 : 0,
+      'Light': t.light ? 1 : 0,
+      'Heavy': t.heavy ? 1 : 0,
+      'Toxin': t.toxin ? 1 : 0,
+      'Web / Gas / Graviton': (t.web || t.gas || t.graviton) ? 1 : 0,
+      'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
+        !/^(Ammo|Damage|Rapid Fire|Template|Blast|Unstable|Limited|Single Shot|Light|Heavy|Toxin|Web|Gas|Graviton Pulse)/.test(x)).length
+    };
+  }
+
+  function meleeFeatures(p) {
+    const t = p.traits, txt = p.traitText || '';
+    const sBonus = (function () {
+      const m = String(p.str).match(/S\+(\d)/); return m ? +m[1] : 0;
+    })();
+    return {
+      'Strength over S': sBonus,
+      'no Strength': p.str === null ? 1 : 0,
+      'AP, per point': -p.ap,
+      'Lethality': p.lethality || 0,
+      'Damage (X) over 1': t.damage - 1,
+      'Parry': t.parry ? 1 : 0,
+      'Unwieldy': t.unwieldy ? 1 : 0,
+      'Breaching / Shock': (t.breaching || t.shock) ? 1 : 0,
+      'Toxin': t.toxin ? 1 : 0,
+      'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
+        !/^(Melee|Damage|Parry|Unwieldy|Heavy|Breaching|Shock|Toxin)/.test(x)).length
+    };
+  }
+
+  /* Build one model. `set` is a list of profiles that all carry a price. */
+  function model(set, extract) {
+    const fit = set.filter(p => !Data.isMultiProfile(p.name));
+    const names = Object.keys(extract(fit[0]));
+    const X = fit.map(p => Object.values(extract(p)));
+    const y = fit.map(p => Data.costs[p.name]);
+    const m = ridge(X, y, LAMBDA);
+    const score = (p) => {
+      const f = Object.values(extract(p));
+      return m.intercept + f.reduce((a, v, j) => a + v * m.coef[j], 0);
+    };
+    const residuals = set.map(p => ({
+      name: p.name, cost: Data.costs[p.name], model: score(p),
+      diff: Data.costs[p.name] - score(p), held: Data.isMultiProfile(p.name)
+    })).sort((a, b) => a.diff - b.diff);
+    return {
+      n: fit.length, r2: m.r2, mae: m.mae, intercept: m.intercept,
+      coefficients: names.map((n, j) => ({ name: n, credits: m.coef[j] }))
+                         .sort((a, b) => b.credits - a.credits),
+      residuals: residuals
+    };
+  }
+
+  function build() {
+    const priced = (list) => {
+      const seen = {}, out = [];
+      for (const p of list) {
+        if (Data.costs[p.name] === undefined || seen[p.name]) continue;
+        seen[p.name] = 1; out.push(p);
+      }
+      return out;
+    };
+    const rangedSet = priced(Data.ranged);
+    const meleeSet = priced(Data.melee.filter(p => p.traits.melee));
+    return {
+      ranged: model(rangedSet, rangedFeatures),
+      melee: model(meleeSet, meleeFeatures)
+    };
+  }
+
+  return { build: build, ridge: ridge, LAMBDA: LAMBDA,
+           rangedFeatures: rangedFeatures, meleeFeatures: meleeFeatures };
+})();
+if (typeof module !== 'undefined') module.exports = Pricing;
 </script>
 
 <script id="ui">
@@ -1170,16 +1377,99 @@ if (typeof module !== 'undefined') module.exports = Data;
     recompute();
   }
 
+  /* ---- value panel -------------------------------------------------------
+     What the Trading Post charges per stat, fitted from its own price list.
+     This says nothing about how good a weapon is — only what it is billed at. */
+  function table(head, rows) {
+    const t = el('table', { class: 'val' });
+    const tr = el('tr');
+    for (const h of head) tr.appendChild(el('th', { text: h }));
+    t.appendChild(tr);
+    for (const r of rows) {
+      const row = el('tr');
+      for (const c of r) {
+        row.appendChild(el('td', { class: c.cls || '', text: c.text !== undefined ? c.text : c }));
+      }
+      t.appendChild(row);
+    }
+    return t;
+  }
+
+  const credits = (x) => (x >= 0 ? '+' : '\u2212') + Math.abs(x).toFixed(1);
+  const whole = (x) => (x >= 0 ? '+' : '\u2212') + Math.round(Math.abs(x));
+
+  function standouts(model, best) {
+    const fitted = model.residuals.filter(r => !r.held);
+    const rows = (best ? fitted.slice(0, 8) : fitted.slice(-8).reverse());
+    return table(['Weapon', 'Costs', 'Worth', 'Difference'], rows.map(r => [
+      r.name,
+      { text: r.cost + 'c', cls: 'n' },
+      { text: Math.round(r.model) + 'c', cls: 'n' },
+      { text: whole(r.diff) + 'c', cls: 'n ' + (r.diff < 0 ? 'good' : 'bad') }
+    ]));
+  }
+
+  function section(title, node) {
+    return el('fieldset', {}, el('legend', { text: title }), node);
+  }
+
+  function buildValue(root) {
+    const M = Pricing.build();
+
+    root.appendChild(el('p', { class: 'sub',
+      text: 'What the Trading Post charges for each stat, worked out from its own price list. ' +
+            'This is about prices, not about how good a weapon is.' }));
+
+    for (const [label, m] of [['Ranged', M.ranged], ['Close combat', M.melee]]) {
+      root.appendChild(section(label + ' \u2014 best value', standouts(m, true)));
+      root.appendChild(section(label + ' \u2014 worst value', standouts(m, false)));
+      const fit = el('p', { class: 'fitline', html:
+        'Fitted on <b>' + m.n + '</b> weapons. Explains <b>' + (m.r2 * 100).toFixed(1) +
+        '%</b> of the price, typical error <b>\u00b1' + m.mae.toFixed(1) + 'c</b>.' });
+      const coef = section(label + ' \u2014 what the market charges',
+        table(['Feature', 'Credits'], m.coefficients.map(c => [
+          c.name, { text: credits(c.credits), cls: 'n ' + (c.credits < 0 ? 'good' : '') }])));
+      coef.insertBefore(fit, coef.childNodes[1]);
+      root.appendChild(coef);
+    }
+
+    const body = el('div', { class: 'body' });
+    body.appendChild(el('p', { html:
+      'Each weapon\u2019s price is fitted against its stat line, so a coefficient reads as ' +
+      '<i>the market adds about this many credits per unit, holding the rest of the profile ' +
+      'fixed</i>. With only ~40 weapons, treat the sign and rough size as the signal and the ' +
+      'decimals as noise.' }));
+    body.appendChild(el('p', { html:
+      '<b>The drawbacks do not come out as discounts, and that is an artefact.</b> Ammo (X+), ' +
+      'Unstable and Heavy all show a premium, because they sit on better weapons: those with ' +
+      'Ammo (5+) or (6+) average a point more Strength, a point more AP and half a step more ' +
+      'Lethality than weapons with no Ammo trait. The Trading Post never sells the same weapon ' +
+      'with and without it, so there is no controlled comparison and the question cannot be ' +
+      'answered from prices. Read those as markers of a weapon class, not as prices. The ' +
+      'drawback is still real in play \u2014 Ammo (6+) costs roughly 45% of a weapon\u2019s firing uptime.' }));
+    body.appendChild(el('p', { html:
+      'Two discounts do survive, because they sit on otherwise ordinary weapons: <b>Light</b>, ' +
+      'with matched rifle and pistol pairs across the list, and <b>Limited</b> on the grenades.' }));
+    body.appendChild(el('p', { html:
+      'Shotgun ammo types and grenade launcher rounds are left out: one price buys several ' +
+      'profiles, so scoring one of them understates what the credits bought. Trading Post ' +
+      'prices only (p154\u2013157) \u2014 gang equipment lists price some weapons differently.' }));
+    root.appendChild(el('details', {}, el('summary', { text: 'How this is worked out, and what it cannot tell you' }), body));
+  }
+
   /* ---- boot -------------------------------------------------------------- */
   const rangedRoot = document.getElementById('panel-ranged');
   const meleeRoot = document.getElementById('panel-melee');
+  const valueRoot = document.getElementById('panel-value');
   buildRanged(rangedRoot);
   buildMelee(meleeRoot);
   wire(rangedRoot, false);
   wire(meleeRoot, true);
+  buildValue(valueRoot);
 
-  const tabs = [document.getElementById('tab-ranged'), document.getElementById('tab-melee')];
-  const panels = [rangedRoot, meleeRoot];
+  const tabs = [document.getElementById('tab-ranged'), document.getElementById('tab-melee'),
+                document.getElementById('tab-value')];
+  const panels = [rangedRoot, meleeRoot, valueRoot];
   tabs.forEach((tab, i) => tab.addEventListener('click', () => {
     tabs.forEach((t, j) => t.setAttribute('aria-selected', String(i === j)));
     panels.forEach((p, j) => p.classList.toggle('hidden', i !== j));

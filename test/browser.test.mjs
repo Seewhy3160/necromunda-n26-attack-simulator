@@ -248,3 +248,45 @@ t('Unstable in the Ballistic Skill list resolves the hit on the firer', async ()
   await setSel('panel-ranged', 'a.skill', 4);
   assert.match(await page.textContent('#panel-ranged [data-minor]'), /Expected hits\s*0\.8/);
 });
+
+t('the Value tab prices each stat from the Trading Post', async () => {
+  await page.click('#tab-value');
+  assert.equal(await page.isVisible('#panel-value'), true);
+  assert.equal(await page.isVisible('#panel-ranged'), false);
+
+  const text = await page.textContent('#panel-value');
+  assert.match(text, /Template/);
+  assert.match(text, /AP, per point/);
+  assert.match(text, /Lethality/);
+  assert.match(text, /Rapid Fire, per die/);
+  assert.match(text, /Explains 9\d\.\d% of the price/);
+
+  // Light and Limited are the two discounts that survive; they must read negative.
+  const rows = await page.$$eval('#panel-value table.val tr', trs => trs.map(tr =>
+    [...tr.children].map(td => td.textContent)));
+  const light = rows.find(r => r[0] === 'Light');
+  assert.ok(light && light[1].startsWith('−'), `Light read ${light && light[1]}`);
+
+  // The confounding caveat must be stated, not buried.
+  assert.match(text, /do not come out as discounts/);
+  assert.match(text, /45% of a weapon/);
+});
+
+t('multi-profile purchases are kept out of the standout lists', async () => {
+  const names = await page.$$eval('#panel-value table.val td:first-child',
+    tds => tds.map(td => td.textContent));
+  for (const n of names) {
+    assert.doesNotMatch(n, /^Grenade launcher/, 'grenade launcher rounds should be held out');
+    assert.doesNotMatch(n, /^Combat shotgun/, 'shotgun ammo types should be held out');
+  }
+});
+
+t('all three tabs still switch cleanly', async () => {
+  for (const [tab, panel] of [['tab-ranged', 'panel-ranged'], ['tab-melee', 'panel-melee'],
+                              ['tab-value', 'panel-value']]) {
+    await page.click('#' + tab);
+    assert.equal(await page.isVisible('#' + panel), true);
+    assert.equal(await page.getAttribute('#' + tab, 'aria-selected'), 'true');
+  }
+  await page.click('#tab-ranged');
+});
