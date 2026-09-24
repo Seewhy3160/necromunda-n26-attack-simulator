@@ -290,3 +290,21 @@ t('all three tabs still switch cleanly', async () => {
   }
   await page.click('#tab-ranged');
 });
+
+t('(X+) traits are priced per threshold, not as a flag', async () => {
+  await page.click('#tab-value');
+  const rows = await page.$$eval('#panel-value table.val tr', trs => trs.map(tr =>
+    [...tr.children].map(td => td.textContent)));
+  const find = (n) => rows.find(r => r[0] === n);
+
+  // Breaching (5+) fires twice as often as (6+) and must be priced accordingly.
+  const b5 = find('Breaching (5+)'), b6 = find('Breaching (6+)');
+  assert.ok(b5 && b6, 'both Breaching thresholds should be listed');
+  const val = (c) => parseFloat(c.replace('−', '-').replace('+', ''));
+  assert.ok(Math.abs(val(b5[1]) / val(b6[1]) - 2) < 0.01,
+    `Breaching (5+) ${b5[1]} should be double (6+) ${b6[1]}`);
+
+  assert.ok(find('Toxin (3+)') && find('Toxin (4+)'), 'Toxin thresholds should be separate');
+  assert.ok(!find('Breaching / Shock'), 'Breaching and Shock must not be merged');
+  assert.match(await page.textContent('#panel-value'), /priced by how often they fire/);
+});

@@ -516,7 +516,8 @@ const Data = (function () {
   function parseTraits(str) {
     const t = {
       rapidFire: 0, toxin: 0, rending: 0, shred: 0, breaching: 0, shock: 0, blaze: 0,
-      damage: 1, paired: 0, gas: false, web: false, flash: false, graviton: false,
+      damage: 1, paired: 0, knockback: 0, concussive: 0,
+      gas: false, web: false, flash: false, graviton: false,
       autoHit: false, light: false, melee: false, unwieldy: false, parry: false,
       unstable: false, heavy: false, blast: false, smoke: false
     };
@@ -530,6 +531,8 @@ const Data = (function () {
     t.shock     = num(/Shock \((\d)\+\)/);
     t.blaze     = num(/Blaze \((\d)\+\)/);
     t.paired    = num(/Paired \((\d)\)/);
+    t.knockback = num(/Knockback \((\d)\+\)/);
+    t.concussive= num(/Concussive \((\d)\+\)/);
     t.damage    = num(/Damage \((\d)\)/) || 1;
     t.gas       = /\bGas\b/.test(str);
     t.web       = /\bWeb\b/.test(str);
@@ -764,6 +767,13 @@ const Pricing = (function () {
 
   const inches = (s) => { const m = String(s).match(/(\d+)/); return m ? +m[1] : 0; };
 
+  /* An (X+) trait fires on a 6 minus X plus one faces in six, so Breaching (5+)
+     is worth twice Breaching (6+). Scoring it as a flag would price those the
+     same, which is wrong. The feature is the chance of triggering; the
+     coefficient then reads as credits per full 6-in-6 of it, and the panel
+     expands that back out into the values the list actually uses. */
+  const rate = (x) => x ? (7 - x) / 6 : 0;
+
   function rangedFeatures(p) {
     const t = p.traits, txt = p.traitText || '';
     const ammo = (function () { const m = txt.match(/Ammo \((\d)\+\)/); return m ? +m[1] : 0; })();
@@ -784,10 +794,12 @@ const Pricing = (function () {
       'Single Shot': /Single Shot/.test(txt) ? 1 : 0,
       'Light': t.light ? 1 : 0,
       'Heavy': t.heavy ? 1 : 0,
-      'Toxin': t.toxin ? 1 : 0,
+      'Toxin': rate(t.toxin),
+      'Knockback': rate(t.knockback),
+      'Blaze': t.blaze ? 1 : 0,
       'Web / Gas / Graviton': (t.web || t.gas || t.graviton) ? 1 : 0,
       'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
-        !/^(Ammo|Damage|Rapid Fire|Template|Blast|Unstable|Limited|Single Shot|Light|Heavy|Toxin|Web|Gas|Graviton Pulse)/.test(x)).length
+        !/^(Ammo|Damage|Rapid Fire|Template|Blast|Unstable|Limited|Single Shot|Light|Heavy|Toxin|Knockback|Blaze|Web|Gas|Graviton Pulse)/.test(x)).length
     };
   }
 
@@ -796,19 +808,37 @@ const Pricing = (function () {
     const sBonus = (function () {
       const m = String(p.str).match(/S\+(\d)/); return m ? +m[1] : 0;
     })();
+    /* 'no Strength' is dropped here: the only melee weapons without a Strength
+       are the two stilettos, which are also the only ones with Toxin, so the
+       two features would be identical columns. */
     return {
       'Strength over S': sBonus,
-      'no Strength': p.str === null ? 1 : 0,
       'AP, per point': -p.ap,
       'Lethality': p.lethality || 0,
       'Damage (X) over 1': t.damage - 1,
       'Parry': t.parry ? 1 : 0,
       'Unwieldy': t.unwieldy ? 1 : 0,
-      'Breaching / Shock': (t.breaching || t.shock) ? 1 : 0,
+      'Breaching': rate(t.breaching),
+      'Shock': rate(t.shock),
+      'Concussive': rate(t.concussive),
       'Toxin': t.toxin ? 1 : 0,
       'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
-        !/^(Melee|Damage|Parry|Unwieldy|Heavy|Breaching|Shock|Toxin)/.test(x)).length
+        !/^(Melee|Damage|Parry|Unwieldy|Heavy|Breaching|Shock|Concussive|Toxin)/.test(x)).length
     };
+  }
+
+  /* Which features are a trigger rate rather than a flag, and so can be shown
+     at each (X+) the price list actually uses. */
+  const PARAMETRIC = ['Toxin', 'Knockback', 'Breaching', 'Shock', 'Concussive'];
+
+  function observedValues(set, trait) {
+    const found = {};
+    const re = new RegExp(trait + ' \\((\\d)\\+\\)');
+    for (const p of set) {
+      const m = (p.traitText || '').match(re);
+      if (m) found[+m[1]] = 1;
+    }
+    return Object.keys(found).map(Number).sort();
   }
 
   /* Build one model. `set` is a list of profiles that all carry a price. */
@@ -826,10 +856,22 @@ const Pricing = (function () {
       name: p.name, cost: Data.costs[p.name], model: score(p),
       diff: Data.costs[p.name] - score(p), held: Data.isMultiProfile(p.name)
     })).sort((a, b) => a.diff - b.diff);
+    const shown = [];
+    names.forEach((n, j) => {
+      if (PARAMETRIC.indexOf(n) >= 0) {
+        const vals = observedValues(set, n);
+        if (vals.length) {
+          for (const x of vals) {
+            shown.push({ name: n + ' (' + x + '+)', credits: m.coef[j] * (7 - x) / 6 });
+          }
+          return;
+        }
+      }
+      shown.push({ name: n, credits: m.coef[j] });
+    });
     return {
       n: fit.length, r2: m.r2, mae: m.mae, intercept: m.intercept,
-      coefficients: names.map((n, j) => ({ name: n, credits: m.coef[j] }))
-                         .sort((a, b) => b.credits - a.credits),
+      coefficients: shown.sort((a, b) => b.credits - a.credits),
       residuals: residuals
     };
   }
@@ -1439,6 +1481,12 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       '<i>the market adds about this many credits per unit, holding the rest of the profile ' +
       'fixed</i>. With only ~40 weapons, treat the sign and rough size as the signal and the ' +
       'decimals as noise.' }));
+    body.appendChild(el('p', { html:
+      '<b>Traits written (X+) are priced by how often they fire, not as a yes or no.</b> ' +
+      'Breaching (5+) triggers on two faces in six and Breaching (6+) on one, so they are ' +
+      'listed separately and the first is worth twice the second. A trait whose threshold ' +
+      'never varies across the list, such as Blaze at (5+), stays a single figure \u2014 there is ' +
+      'no variation to read a rate from, so its price and its threshold cannot be separated.' }));
     body.appendChild(el('p', { html:
       '<b>The drawbacks do not come out as discounts, and that is an artefact.</b> Ammo (X+), ' +
       'Unstable and Heavy all show a premium, because they sit on better weapons: those with ' +
