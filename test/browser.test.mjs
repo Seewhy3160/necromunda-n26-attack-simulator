@@ -84,14 +84,17 @@ t('every change recomputes on the spot, with no submit button', async () => {
   assert.deepEqual(await odds('panel-ranged'), before);
 });
 
-t('cover can be set from the pinned results block, in step with the Target field', async () => {
+t('cover can be set beside the profile pickers, in step with the Target field', async () => {
   const before = await odds('panel-ranged');
-  const quick = '#panel-ranged .results .quick input[data-mirror="t.rangeBand"]';
+  const quick = '#panel-ranged .quick input[data-mirror="t.rangeBand"]';
   assert.equal((await page.$$(quick)).length, 3);
   assert.equal(await page.isChecked(quick + '[value="0"]'), true);
+  // It sits in the "Load a profile" box at the top of the form, not in the Target box.
+  assert.equal(await page.$eval('#panel-ranged .quick',
+    n => n.closest('fieldset').querySelector('legend').textContent), 'Load a profile');
 
   // One tap at the top lands on the real dropdown far below and recomputes.
-  await page.click('#panel-ranged .results .quick label:has(input[value="2"])');
+  await page.click('#panel-ranged .quick label:has(input[value="2"])');
   assert.equal(await page.inputValue('#panel-ranged [data-bind="t.rangeBand"]'), '2');
   const covered = await odds('panel-ranged');
   assert.notDeepEqual(before, covered);

@@ -50,16 +50,12 @@ h1{font-size:19px;margin:0 0 3px;letter-spacing:.2px}
 .bar i{display:block;height:100%}
 .minor{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:12.5px;color:var(--ink-dim)}
 .minor b{color:var(--ink);font-weight:600;font-family:ui-monospace,Menlo,monospace}
-.quick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
-.quick .quick-label{font-size:12.5px;color:var(--ink-dim);margin-right:4px}
-.quick .chk{position:relative;gap:0;padding:7px 12px;font-size:13px}
-.quick .chk input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
 .warn,.info{margin-top:9px;font-size:12.5px;border-radius:8px;padding:8px 10px}
 .warn{color:var(--accent);background:rgba(224,164,88,.09);border:1px solid rgba(224,164,88,.32)}
 .info{color:var(--ink-dim);background:var(--panel);border:1px solid var(--line)}
 .warn p,.info p{margin:0 0 4px} .warn p:last-child,.info p:last-child{margin:0}
 .info b{color:var(--ink)}
-.profile{grid-column:1/-1;margin:2px 0 0;font-size:12.5px;color:var(--ink-dim);
+.profile{margin:10px 0 0;font-size:12.5px;color:var(--ink-dim);
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.5}
 .profile b{color:var(--ink);font-family:inherit}
 
@@ -68,7 +64,7 @@ fieldset{border:1px solid var(--line);border-radius:var(--radius);background:var
 legend{font:600 12px/1 inherit;text-transform:uppercase;letter-spacing:.8px;color:var(--accent);padding:0 6px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:10px}
 .f{display:flex;flex-direction:column;gap:4px;min-width:0}
-.f label{font-size:12px;color:var(--ink-dim)}
+.f label,.f .lbl{font-size:12px;color:var(--ink-dim)}
 .f select,.f input[type=text]{
   appearance:none;width:100%;background:var(--panel-2);color:var(--ink);
   border:1px solid var(--line);border-radius:8px;padding:10px 26px 10px 10px;font:15px/1.2 inherit;
@@ -83,6 +79,10 @@ legend{font:600 12px/1 inherit;text-transform:uppercase;letter-spacing:.8px;colo
 .chk input{accent-color:var(--accent);margin:0;width:16px;height:16px}
 .chk:has(input:checked){border-color:var(--accent);color:var(--ink)}
 .chk.wide{flex:1 1 100%;border-radius:8px}
+/* one-tap cover chips beside the profile pickers; the box is hidden, the pill shows the state */
+.quick .chk{position:relative;gap:0;padding:9px 12px}
+.quick .chk input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+@media (max-width:819px){ .f.quick-field{grid-column:1/span 2} }
 details{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);margin:0 0 var(--gap);padding:0}
 details>summary{padding:12px;font:600 13px/1 inherit;color:var(--ink-dim);cursor:pointer;list-style:none}
 details>summary::-webkit-details-marker{display:none}
@@ -1648,7 +1648,7 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
 
   const LABELS = { fleshWound: 'Flesh wound', serious: 'Serious injury', outOfAction: 'Out of action' };
 
-  function resultsBlock(quick) {
+  function resultsBlock() {
     const mk = (cls, key) => el('div', { class: 'odd ' + cls },
       el('div', { class: 'v', 'data-out': key, text: '0%' }),
       el('div', { class: 'k', text: LABELS[key] }));
@@ -1660,24 +1660,30 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
       el('div', { class: 'odds' }, mk('flesh', 'fleshWound'), mk('serious', 'serious'), mk('ooa', 'outOfAction')),
       bar,
       el('div', { class: 'minor', 'data-minor': '1' }),
-      quick || null,
       el('div', { class: 'warn hidden', 'data-warn': '1' }),
       el('div', { class: 'info hidden', 'data-notes': '1' }));
   }
 
-  /* A one-tap copy of the cover / range save field, kept in the sticky results
-     block so it can be changed without scrolling down to the Target fieldset.
+  /* A one-tap copy of the cover / range save field, placed beside the profile
+     pickers so it can be changed without scrolling down to the Target fieldset.
      It mirrors the real control rather than binding a second one: readState
      only sees [data-bind], and wire() keeps the two in step. */
   function quickCover() {
-    const row = el('div', { class: 'quick', role: 'radiogroup', 'aria-label': 'Cover / range save modifier' },
-      el('span', { class: 'quick-label', text: 'Cover' }));
+    const row = el('div', { class: 'chks quick', role: 'radiogroup', 'aria-label': 'Cover / range save modifier' });
     for (const [v, label] of [[0, 'None'], [1, 'Short +1'], [2, 'Long +2']]) {
       const r = el('input', { type: 'radio', name: 'quick-rangeBand', value: String(v), 'data-mirror': 't.rangeBand' });
       if (v === 0) r.checked = true;
       row.appendChild(el('label', { class: 'chk' }, r, el('span', { text: label })));
     }
-    return row;
+    return el('div', { class: 'f quick-field' }, el('span', { class: 'lbl', text: 'Cover / range save modifier' }), row);
+  }
+
+  /* The profile line goes under the picker grid rather than in it, so the
+     pickers keep their width whether or not a profile is loaded. */
+  function loadGroup() {
+    const fs = group.apply(null, ['Load a profile'].concat(Array.prototype.slice.call(arguments)));
+    fs.appendChild(el('p', { class: 'profile hidden', 'data-profile': '1' }));
+    return fs;
   }
 
   function weaponFields(prefix, melee) {
@@ -1752,11 +1758,11 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
   }
 
   function buildRanged(root) {
-    root.appendChild(resultsBlock(quickCover()));
-    root.appendChild(group('Load a profile',
+    root.appendChild(resultsBlock());
+    root.appendChild(loadGroup(
       field('Weapon', 'pick.weapon', weaponOpts(Data.ranged), ''),
       field('Target', 'pick.fighter', FIGHTER_OPTS, ''),
-      el('p', { class: 'profile', 'data-profile': '1' })));
+      quickCover()));
     root.appendChild(group('Attacker',
       field('Ballistic Skill', 'a.skill', BS_SKILL, 4),
       field('Other hit modifiers', 'a.hitMod', MODS, 0,
@@ -1771,12 +1777,11 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
 
   function buildMelee(root) {
     root.appendChild(resultsBlock());
-    root.appendChild(group('Load a profile',
+    root.appendChild(loadGroup(
       field('Primary weapon', 'pick.weapon', weaponOpts(Data.melee), ''),
       field('Secondary weapon', 'pick.weapon2', weaponOpts(Data.melee), ''),
       field('Attacker', 'pick.fighter', FIGHTER_OPTS, ''),
-      field('Target', 'pick.fighter2', FIGHTER_OPTS, ''),
-      el('p', { class: 'profile', 'data-profile': '1' })));
+      field('Target', 'pick.fighter2', FIGHTER_OPTS, '')));
     root.appendChild(group('Attacker',
       field('Weapon Skill', 'a.skill', SKILL, 4),
       field('Strength', 'a.S', T_OPTS, 3),
