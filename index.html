@@ -98,6 +98,7 @@ table.val td.n{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,mo
 table.val td.good{color:var(--ok);font-weight:600}
 table.val td.bad{color:var(--ooa);font-weight:600}
 table.val td.thin{color:var(--accent)}
+table.val td.dim{color:var(--ink-faint)}
 .fitline{font-size:12.5px;color:var(--ink-dim);margin:0 0 10px}
 .fitline b{color:var(--ink);font-family:ui-monospace,Menlo,monospace}
 footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px 0;line-height:1.6}
@@ -805,7 +806,9 @@ const Pricing = (function () {
       'Lethality, step to 3': p.lethality >= 3 ? 1 : 0,
       'Damage, step to 2': t.damage >= 2 ? 1 : 0,
       'Damage, step to 3': t.damage >= 3 ? 1 : 0,
-      'Rapid Fire, per die': t.rapidFire,
+      'Rapid Fire, step to 1': t.rapidFire >= 1 ? 1 : 0,
+      'Rapid Fire, step to 2': t.rapidFire >= 2 ? 1 : 0,
+      'Rapid Fire, step to 3': t.rapidFire >= 3 ? 1 : 0,
       'Short range, per inch': inches(p.sr),
       'Long range, per inch': inches(p.lr),
       'Template': t.autoHit ? 1 : 0,
@@ -859,8 +862,10 @@ const Pricing = (function () {
   /* Ordered levels: a level's price is every step up to it, added together. */
   const STEPPED = {
     'Lethality': ['Lethality, step to 2', 'Lethality, step to 3'],
-    'Damage': ['Damage, step to 2', 'Damage, step to 3']
+    'Damage': ['Damage, step to 2', 'Damage, step to 3'],
+    'Rapid Fire': ['Rapid Fire, step to 1', 'Rapid Fire, step to 2', 'Rapid Fire, step to 3']
   };
+  const STEP_BASE = { 'Lethality': 2, 'Damage': 2, 'Rapid Fire': 1 };
 
   function observedValues(set, trait) {
     const found = {};
@@ -872,16 +877,44 @@ const Pricing = (function () {
     return Object.keys(found).map(Number).sort();
   }
 
+  /* Two ways a stat can carry a price. Additive says Template is worth a fixed
+     number of credits wherever it lands. Multiplicative fits the log of the
+     price, so every coefficient becomes a factor and a trait is worth more on a
+     weapon that is already expensive — auto-hitting matters more on a meltagun
+     than on a stub gun. Both are fitted and compared on the same footing, in
+     credits, so the data decides rather than the choice of model. */
+  function fitBoth(X, y, lambda) {
+    const additive = ridge(X, y, lambda);
+    const logged = ridge(X, y.map(Math.log), lambda);
+    /* exp() of a fitted log under-predicts the mean, so rescale by the average
+       exponentiated residual (Duan's smearing estimate) before comparing. */
+    const raw = logged.pred.map(Math.exp);
+    const smear = y.reduce((a, v, i) => a + v / raw[i], 0) / y.length;
+    logged.predCredits = raw.map(v => v * smear);
+    logged.smear = smear;
+    logged.maeCredits = y.reduce((a, v, i) => a + Math.abs(v - logged.predCredits[i]), 0) / y.length;
+    additive.predCredits = additive.pred;
+    additive.maeCredits = additive.mae;
+    return { additive: additive, multiplicative: logged };
+  }
+
   /* Build one model. `set` is a list of profiles that all carry a price. */
   function model(set, extract) {
     const fit = set.filter(p => !Data.isMultiProfile(p.name));
     const names = Object.keys(extract(fit[0]));
     const X = fit.map(p => Object.values(extract(p)));
     const y = fit.map(p => Data.costs[p.name]);
-    const m = ridge(X, y, LAMBDA);
+    const both = fitBoth(X, y, LAMBDA);
+    /* Whichever predicts the actual credit prices more closely leads; the other
+       is reported beside it so the choice is visible rather than assumed. */
+    const better = both.multiplicative.maeCredits < both.additive.maeCredits
+                 ? 'multiplicative' : 'additive';
+    const m = both.additive, lg = both.multiplicative;
     const score = (p) => {
       const f = Object.values(extract(p));
-      return m.intercept + f.reduce((a, v, j) => a + v * m.coef[j], 0);
+      return better === 'multiplicative'
+        ? Math.exp(lg.intercept + f.reduce((a, v, j) => a + v * lg.coef[j], 0)) * lg.smear
+        : m.intercept + f.reduce((a, v, j) => a + v * m.coef[j], 0);
     };
     const residuals = set.map(p => ({
       name: p.name, cost: Data.costs[p.name], model: score(p),
@@ -895,17 +928,24 @@ const Pricing = (function () {
 
     const shown = [];
     const coefOf = (name) => { const j = names.indexOf(name); return j < 0 ? null : m.coef[j]; };
-    const countAtLeast = (which, level) => fit.filter(p =>
-      (which === 'Lethality' ? p.lethality : p.traits.damage) >= level).length;
+    const logCoefOf = (name) => { const j = names.indexOf(name); return j < 0 ? 0 : lg.coef[j]; };
+    const levelOf = (which, p) => which === 'Lethality' ? p.lethality
+                                : which === 'Damage' ? p.traits.damage
+                                : p.traits.rapidFire;
+    const countAtLeast = (which, level) =>
+      fit.filter(p => (levelOf(which, p) || 0) >= level).length;
 
     for (const family in STEPPED) {
-      let running = 0;
+      const base = STEP_BASE[family];
+      let running = 0, runningLog = 0;
       STEPPED[family].forEach((step, i) => {
         const c = coefOf(step);
         if (c === null) return;
         running += c;
-        shown.push({ name: family + ' ' + (i + 2), credits: running,
-                     weapons: countAtLeast(family, i + 2) });
+        runningLog += logCoefOf(step);
+        const n = countAtLeast(family, base + i);
+        if (n) shown.push({ name: family + ' ' + (base + i), credits: running,
+                            factor: Math.exp(runningLog), weapons: n });
       });
     }
     const stepNames = [].concat.apply([], Object.keys(STEPPED).map(k => STEPPED[k]));
@@ -917,7 +957,8 @@ const Pricing = (function () {
           const carried = fit.filter(p =>
             new RegExp('Blast \\(' + pair[0][0] + '"').test(p.traitText || '')).length;
           if (carried) shown.push({ name: n + ' (' + pair[0] + ')',
-                                    credits: m.coef[j] * pair[1], weapons: carried });
+                                    credits: m.coef[j] * pair[1],
+                                    factor: Math.exp(lg.coef[j] * pair[1]), weapons: carried });
         }
         return;
       }
@@ -926,15 +967,20 @@ const Pricing = (function () {
         if (vals.length) {
           for (const x of vals) {
             shown.push({ name: n + ' (' + x + '+)', credits: m.coef[j] * (7 - x) / 6,
-                         weapons: carrying(n, x), sharedWith: vals.length > 1 ? 0 : support[j] });
+                         factor: Math.exp(lg.coef[j] * (7 - x) / 6),
+                         weapons: carrying(n, x) });
           }
           return;
         }
       }
-      shown.push({ name: n, credits: m.coef[j], weapons: support[j] });
+      shown.push({ name: n, credits: m.coef[j], factor: Math.exp(lg.coef[j]),
+                   weapons: support[j] });
     });
     return {
       n: fit.length, r2: m.r2, mae: m.mae, intercept: m.intercept,
+      better: better,
+      additiveError: m.maeCredits, multiplicativeError: lg.maeCredits,
+      baseline: Math.exp(lg.intercept) * lg.smear,
       coefficients: shown.sort((a, b) => b.credits - a.credits),
       residuals: residuals
     };
@@ -1529,13 +1575,18 @@ if (typeof module !== 'undefined') module.exports = Pricing;
     for (const [label, m] of [['Ranged', M.ranged], ['Close combat', M.melee]]) {
       root.appendChild(section(label + ' \u2014 best value', standouts(m, true)));
       root.appendChild(section(label + ' \u2014 worst value', standouts(m, false)));
+      const flat = m.better === 'additive';
       const fit = el('p', { class: 'fitline', html:
-        'Fitted on <b>' + m.n + '</b> weapons. Explains <b>' + (m.r2 * 100).toFixed(1) +
-        '%</b> of the price, typical error <b>\u00b1' + m.mae.toFixed(1) + 'c</b>.' });
+        'Fitted on <b>' + m.n + '</b> weapons. Charging a <b>flat rate</b> per stat misses by ' +
+        '<b>\u00b1' + m.additiveError.toFixed(1) + 'c</b>; treating each stat as a <b>multiplier</b> ' +
+        'misses by <b>\u00b1' + m.multiplicativeError.toFixed(1) + 'c</b>. ' +
+        'The price list is <b>' + (flat ? 'closer to flat rates' : 'closer to multipliers') +
+        '</b>, so the credit figures lead and the \u00d7 column is the alternative fit.' });
       const coef = section(label + ' \u2014 what the market charges',
-        table(['Feature', 'Credits', 'Weapons'], m.coefficients.map(c => [
+        table(['Feature', 'Credits', '\u00d7', 'Weapons'], m.coefficients.map(c => [
           c.name,
           { text: credits(c.credits), cls: 'n ' + (c.credits < 0 ? 'good' : '') },
+          { text: '\u00d7' + c.factor.toFixed(2), cls: 'n dim' },
           { text: String(c.weapons), cls: 'n' + (c.weapons <= 2 ? ' thin' : '') }])));
       coef.insertBefore(fit, coef.childNodes[1]);
       root.appendChild(coef);
@@ -1558,6 +1609,19 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       'so that ratio is set and only its scale is fitted. Left as two free flags the fit put the ' +
       '5\u2033 marker <i>below</i> the 3\u2033: four weapons carry it, all grenades, so the figure chased ' +
       'what grenades cost rather than what the marker is worth.' }));
+    body.appendChild(el('p', { html:
+      '<b>Flat rates or multipliers?</b> A trait plausibly ought to be worth more on a weapon ' +
+      'that is already good \u2014 auto-hitting matters more on a meltagun than on a stub gun \u2014 which ' +
+      'would make each stat a multiplier rather than a fixed number of credits. Both were fitted ' +
+      'and compared on the same footing, by how closely each predicts the actual prices in ' +
+      'credits. <b>The flat rate wins, and not narrowly.</b> The price list charges much the same ' +
+      'for a stat wherever it lands, even though its value in play plainly does not work that ' +
+      'way. The \u00d7 column shows what the multiplier fit said, for comparison.' }));
+    body.appendChild(el('p', { html:
+      'The one hint the other way is <b>Template</b>: across the seven weapons carrying it, the ' +
+      'flat rate under-prices the dear ones and over-prices the cheap ones, which is what a ' +
+      'multiplier would look like. Seven weapons is not enough to act on, and the whole-list ' +
+      'comparison points the other way, so it stays an observation rather than a change.' }));
     body.appendChild(el('p', { html:
       'The <b>Weapons</b> column is how many weapons carry each feature. A figure resting on ' +
       'one or two is describing those weapons rather than a market rate \u2014 read it as an ' +

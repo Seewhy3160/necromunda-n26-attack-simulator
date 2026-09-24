@@ -258,8 +258,11 @@ t('the Value tab prices each stat from the Trading Post', async () => {
   assert.match(text, /Template/);
   assert.match(text, /AP, per point/);
   assert.match(text, /Lethality/);
-  assert.match(text, /Rapid Fire, per die/);
-  assert.match(text, /Explains 9\d\.\d% of the price/);
+  assert.match(text, /Rapid Fire 2/);
+  // Both fits must be reported, and the page must say which one it is using.
+  assert.match(text, /flat rate.*misses by/s);
+  assert.match(text, /multiplier.*misses by/s);
+  assert.match(text, /closer to (flat rates|multipliers)/);
 
   // Light and Limited are the two discounts that survive; they must read negative.
   const rows = await page.$$eval('#panel-value table.val tr', trs => trs.map(tr =>

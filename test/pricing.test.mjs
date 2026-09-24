@@ -92,3 +92,24 @@ test('every priced weapon is scored, and nothing is NaN', () => {
     }
   }
 });
+
+test('both a flat-rate and a multiplier fit are produced and compared in credits', () => {
+  for (const m of [M.ranged, M.melee]) {
+    assert.ok(Number.isFinite(m.additiveError) && m.additiveError > 0);
+    assert.ok(Number.isFinite(m.multiplicativeError) && m.multiplicativeError > 0);
+    assert.ok(['additive', 'multiplicative'].includes(m.better));
+    // Whichever is reported as better must actually be the better of the two.
+    const lower = m.multiplicativeError < m.additiveError ? 'multiplicative' : 'additive';
+    assert.equal(m.better, lower);
+    for (const c of m.coefficients) {
+      assert.ok(Number.isFinite(c.factor) && c.factor > 0, `${c.name} factor ${c.factor}`);
+    }
+  }
+});
+
+test('Rapid Fire is an ordered level like the other counts', () => {
+  const one = at(M.ranged, 'Rapid Fire 1'), two = at(M.ranged, 'Rapid Fire 2');
+  assert.ok(one && two, 'both Rapid Fire levels should be listed');
+  assert.ok(two.credits > one.credits,
+    `Rapid Fire 2 (${two.credits.toFixed(1)}c) should cost more than 1 (${one.credits.toFixed(1)}c)`);
+});
