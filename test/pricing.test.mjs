@@ -113,3 +113,41 @@ test('Rapid Fire is an ordered level like the other counts', () => {
   assert.ok(two.credits > one.credits,
     `Rapid Fire 2 (${two.credits.toFixed(1)}c) should cost more than 1 (${one.credits.toFixed(1)}c)`);
 });
+
+/* The rules already say which way each of these cuts, so the fit must not
+   contradict them however the prices happen to fall. */
+const DRAWBACKS = ['Ammo, chance of running dry', 'Unstable', 'Heavy', 'Unwieldy',
+                   'Limited', 'Single Shot', 'Scarce'];
+const BENEFITS = ['Strength', 'Strength over S', 'AP, per point', 'Template', 'Parry',
+                  'Lethality 2', 'Lethality 3', 'Damage 2', 'Damage 3',
+                  'Rapid Fire 1', 'Rapid Fire 2', 'Blast (3″)', 'Blast (5″)',
+                  'Short range, per inch', 'Long range, per inch'];
+
+test('no drawback is priced as a premium', () => {
+  for (const m of [M.ranged, M.melee]) {
+    for (const c of m.coefficients) {
+      if (DRAWBACKS.includes(c.name)) {
+        assert.ok(c.credits <= 1e-9,
+          `${c.name} is a drawback but prices at +${c.credits.toFixed(1)}c`);
+      }
+    }
+  }
+});
+
+test('no advantage is priced as a discount', () => {
+  for (const m of [M.ranged, M.melee]) {
+    for (const c of m.coefficients) {
+      if (BENEFITS.includes(c.name) || /^(Toxin|Knockback|Breaching|Shock|Concussive|Blaze) \(/.test(c.name)) {
+        assert.ok(c.credits >= -1e-9,
+          `${c.name} is an advantage but prices at ${c.credits.toFixed(1)}c`);
+      }
+    }
+  }
+});
+
+test('a coefficient held at its boundary is marked as such', () => {
+  const unwieldy = at(M.melee, 'Unwieldy');
+  assert.ok(unwieldy, 'Unwieldy should still be listed');
+  assert.equal(unwieldy.pinned, true, 'Unwieldy should be reported as held at 0');
+  assert.ok(Math.abs(unwieldy.credits) < 1e-9);
+});

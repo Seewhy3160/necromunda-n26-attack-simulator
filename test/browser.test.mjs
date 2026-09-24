@@ -270,9 +270,16 @@ t('the Value tab prices each stat from the Trading Post', async () => {
   const light = rows.find(r => r[0] === 'Light');
   assert.ok(light && light[1].startsWith('−'), `Light read ${light && light[1]}`);
 
-  // The confounding caveat must be stated, not buried.
-  assert.match(text, /do not come out as discounts/);
+  // The sign constraint and its reason must be stated, not buried.
+  assert.match(text, /never allowed to add credits/);
   assert.match(text, /45% of a weapon/);
+  // A level whose total is real must show that total, not the boundary marker.
+  const cells = await page.$$eval('#panel-value table.val tr', trs => trs.map(tr =>
+    [...tr.children].map(td => td.textContent)));
+  const rf2 = cells.find(r => r[0] === 'Rapid Fire 2');
+  assert.ok(rf2 && /^\+/.test(rf2[1]), `Rapid Fire 2 should show a price, got ${rf2 && rf2[1]}`);
+  const unw = cells.find(r => r[0] === 'Unwieldy');
+  assert.equal(unw[1], 'held at 0', 'Unwieldy should be shown as held at its boundary');
 });
 
 t('multi-profile purchases are kept out of the standout lists', async () => {

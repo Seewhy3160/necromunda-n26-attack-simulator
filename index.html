@@ -883,9 +883,65 @@ const Pricing = (function () {
      weapon that is already expensive — auto-hitting matters more on a meltagun
      than on a stub gun. Both are fitted and compared on the same footing, in
      credits, so the data decides rather than the choice of model. */
-  function fitBoth(X, y, lambda) {
-    const additive = ridge(X, y, lambda);
-    const logged = ridge(X, y.map(Math.log), lambda);
+  /* Traits the rules make a drawback. None of them can add to what a weapon is
+     worth, whatever the fit says, so their coefficients are held at or below
+     zero. Left free they all come out positive, because the price list hangs
+     them on its strongest weapons: every Unwieldy weapon is a big two-handed
+     thing, so the fit reads Unwieldy as a marker for those weapons rather than
+     as a penalty. Holding them down puts that value back on the Strength,
+     Lethality and AP it actually belongs to. */
+  const DRAWBACKS = ['Ammo, chance of running dry', 'Unstable', 'Heavy', 'Unwieldy',
+                     'Limited', 'Single Shot', 'Scarce'];
+
+  /* And the mirror: things the rules make an advantage cannot subtract from
+     what a weapon is worth either. Left free, Rapid Fire 1 came out negative. */
+  const BENEFITS = ['Strength', 'Strength over S', 'AP, per point', 'Template', 'Blast',
+                    'Short range, per inch', 'Long range, per inch', 'Parry',
+                    'Toxin', 'Knockback', 'Breaching', 'Shock', 'Concussive', 'Blaze',
+                    'Lethality, step to 2', 'Lethality, step to 3',
+                    'Damage, step to 2', 'Damage, step to 3',
+                    'Rapid Fire, step to 1', 'Rapid Fire, step to 2', 'Rapid Fire, step to 3'];
+
+  /* Left free: 'Light', 'no Strength', 'no Lethality' and 'other traits'. Those
+     mark a kind of weapon rather than a good or bad thing, so the data decides. */
+  const signOf = (n) => DRAWBACKS.indexOf(n) >= 0 ? -1 : (BENEFITS.indexOf(n) >= 0 ? 1 : 0);
+
+  /* Refit, pinning any drawback that came out positive to zero, until none do.
+     A small active-set loop; the design here is far too small to need more. */
+  function ridgeSigned(X, y, lambda, names) {
+    const p = X[0].length;
+    const signs = names.map(signOf);
+    const pinned = new Array(p).fill(false);
+    let m = null;
+    for (let iter = 0; iter <= p; iter++) {
+      const keep = [];
+      for (let j = 0; j < p; j++) if (!pinned[j]) keep.push(j);
+      const sub = X.map(r => keep.map(j => r[j]));
+      const fitted = ridge(sub, y, lambda);
+      const coef = new Array(p).fill(0);
+      keep.forEach((j, k) => { coef[j] = fitted.coef[k]; });
+      m = { coef: coef, intercept: fitted.intercept, pinned: pinned.slice() };
+      const bad = [];
+      for (let j = 0; j < p; j++) {
+        if (pinned[j] || !signs[j]) continue;
+        if (signs[j] * coef[j] < 0) bad.push(j);   // wrong side of zero
+      }
+      if (!bad.length) break;
+      for (const j of bad) pinned[j] = true;
+    }
+    /* Recompute the fit statistics against the full design. */
+    m.pred = X.map(r => m.intercept + r.reduce((a, v, j) => a + v * m.coef[j], 0));
+    const yMean = y.reduce((a, b) => a + b, 0) / y.length;
+    const ssRes = y.reduce((a, v, i) => a + (v - m.pred[i]) * (v - m.pred[i]), 0);
+    const ssTot = y.reduce((a, v) => a + (v - yMean) * (v - yMean), 0);
+    m.r2 = 1 - ssRes / ssTot;
+    m.mae = y.reduce((a, v, i) => a + Math.abs(v - m.pred[i]), 0) / y.length;
+    return m;
+  }
+
+  function fitBoth(X, y, lambda, names) {
+    const additive = ridgeSigned(X, y, lambda, names);
+    const logged = ridgeSigned(X, y.map(Math.log), lambda, names);
     /* exp() of a fitted log under-predicts the mean, so rescale by the average
        exponentiated residual (Duan's smearing estimate) before comparing. */
     const raw = logged.pred.map(Math.exp);
@@ -904,7 +960,7 @@ const Pricing = (function () {
     const names = Object.keys(extract(fit[0]));
     const X = fit.map(p => Object.values(extract(p)));
     const y = fit.map(p => Data.costs[p.name]);
-    const both = fitBoth(X, y, LAMBDA);
+    const both = fitBoth(X, y, LAMBDA, names);
     /* Whichever predicts the actual credit prices more closely leads; the other
        is reported beside it so the choice is visible rather than assumed. */
     const better = both.multiplicative.maeCredits < both.additive.maeCredits
@@ -944,8 +1000,11 @@ const Pricing = (function () {
         running += c;
         runningLog += logCoefOf(step);
         const n = countAtLeast(family, base + i);
+        /* Only a level whose running total is nil is being held at the boundary;
+           a pinned first step still leaves later levels with a real price. */
         if (n) shown.push({ name: family + ' ' + (base + i), credits: running,
-                            factor: Math.exp(runningLog), weapons: n });
+                            factor: Math.exp(runningLog), weapons: n,
+                            pinned: Math.abs(running) < 1e-9 });
       });
     }
     const stepNames = [].concat.apply([], Object.keys(STEPPED).map(k => STEPPED[k]));
@@ -958,7 +1017,8 @@ const Pricing = (function () {
             new RegExp('Blast \\(' + pair[0][0] + '"').test(p.traitText || '')).length;
           if (carried) shown.push({ name: n + ' (' + pair[0] + ')',
                                     credits: m.coef[j] * pair[1],
-                                    factor: Math.exp(lg.coef[j] * pair[1]), weapons: carried });
+                                    factor: Math.exp(lg.coef[j] * pair[1]),
+                                    weapons: carried, pinned: !!m.pinned[j] });
         }
         return;
       }
@@ -968,13 +1028,13 @@ const Pricing = (function () {
           for (const x of vals) {
             shown.push({ name: n + ' (' + x + '+)', credits: m.coef[j] * (7 - x) / 6,
                          factor: Math.exp(lg.coef[j] * (7 - x) / 6),
-                         weapons: carrying(n, x) });
+                         weapons: carrying(n, x), pinned: !!m.pinned[j] });
           }
           return;
         }
       }
       shown.push({ name: n, credits: m.coef[j], factor: Math.exp(lg.coef[j]),
-                   weapons: support[j] });
+                   weapons: support[j], pinned: !!m.pinned[j] && Math.abs(m.coef[j]) < 1e-9 });
     });
     return {
       n: fit.length, r2: m.r2, mae: m.mae, intercept: m.intercept,
@@ -1585,7 +1645,8 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       const coef = section(label + ' \u2014 what the market charges',
         table(['Feature', 'Credits', '\u00d7', 'Weapons'], m.coefficients.map(c => [
           c.name,
-          { text: credits(c.credits), cls: 'n ' + (c.credits < 0 ? 'good' : '') },
+          { text: c.pinned ? 'held at 0' : credits(c.credits),
+            cls: 'n ' + (c.pinned ? 'dim' : c.credits < 0 ? 'good' : '') },
           { text: '\u00d7' + c.factor.toFixed(2), cls: 'n dim' },
           { text: String(c.weapons), cls: 'n' + (c.weapons <= 2 ? ' thin' : '') }])));
       coef.insertBefore(fit, coef.childNodes[1]);
@@ -1627,16 +1688,24 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       'one or two is describing those weapons rather than a market rate \u2014 read it as an ' +
       'observation about the meltagun, not as the price of Damage (3).' }));
     body.appendChild(el('p', { html:
-      '<b>The drawbacks do not come out as discounts, and that is an artefact.</b> Ammo (X+), ' +
-      'Unstable and Heavy all show a premium, because they sit on better weapons: those with ' +
-      'Ammo (5+) or (6+) average a point more Strength, a point more AP and half a step more ' +
-      'Lethality than weapons with no Ammo trait. The Trading Post never sells the same weapon ' +
-      'with and without it, so there is no controlled comparison and the question cannot be ' +
-      'answered from prices. Read those as markers of a weapon class, not as prices. The ' +
-      'drawback is still real in play \u2014 Ammo (6+) costs roughly 45% of a weapon\u2019s firing uptime.' }));
+      '<b>A drawback is never allowed to add credits, and an advantage is never allowed to ' +
+      'subtract them.</b> Left free, every drawback came out as a premium: the price list hangs ' +
+      'them on its strongest weapons, so Ammo (5+) and (6+) weapons average a point more ' +
+      'Strength, a point more AP and half a step more Lethality than weapons with no Ammo ' +
+      'trait, and every Unwieldy weapon is a big two-handed thing. The fit was reading them as ' +
+      'markers for those weapons rather than as penalties. Ammo, Unstable, Heavy, Unwieldy, ' +
+      'Limited, Single Shot and Scarce are now held at or below zero, and Strength, AP, ' +
+      'Lethality, Damage, Rapid Fire, Template, Blast and the (X+) benefits at or above it. ' +
+      'Anything shown as <b>held at 0</b> hit that boundary, and its apparent value has gone ' +
+      'back onto the stats it was standing in for.' }));
     body.appendChild(el('p', { html:
-      'Two discounts do survive, because they sit on otherwise ordinary weapons: <b>Light</b>, ' +
-      'with matched rifle and pistol pairs across the list, and <b>Limited</b> on the grenades.' }));
+      'That costs a little accuracy \u2014 the flat-rate error rises from about 4.3c to 4.7c on ' +
+      'ranged weapons \u2014 and buys a model that cannot tell you a penalty is worth paying for. ' +
+      'It does not mean the drawbacks are free: the Trading Post never sells the same weapon ' +
+      'with and without Ammo, so their price simply cannot be read off this list. In play the ' +
+      'cost is real, and large \u2014 Ammo (6+) takes roughly 45% of a weapon\u2019s firing uptime. ' +
+      '<b>Light</b> and <b>Limited</b> are left free to go either way, and both settle negative ' +
+      'on their own: those have matched pairs across the list to be read from.' }));
     body.appendChild(el('p', { html:
       'Shotgun ammo types and grenade launcher rounds are left out: one price buys several ' +
       'profiles, so scoring one of them understates what the credits bought. Trading Post ' +
