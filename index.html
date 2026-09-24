@@ -50,6 +50,10 @@ h1{font-size:19px;margin:0 0 3px;letter-spacing:.2px}
 .bar i{display:block;height:100%}
 .minor{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:9px;font-size:12.5px;color:var(--ink-dim)}
 .minor b{color:var(--ink);font-weight:600;font-family:ui-monospace,Menlo,monospace}
+.quick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
+.quick .quick-label{font-size:12.5px;color:var(--ink-dim);margin-right:4px}
+.quick .chk{position:relative;gap:0;padding:7px 12px;font-size:13px}
+.quick .chk input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
 .warn,.info{margin-top:9px;font-size:12.5px;border-radius:8px;padding:8px 10px}
 .warn{color:var(--accent);background:rgba(224,164,88,.09);border:1px solid rgba(224,164,88,.32)}
 .info{color:var(--ink-dim);background:var(--panel);border:1px solid var(--line)}
@@ -1644,7 +1648,7 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
 
   const LABELS = { fleshWound: 'Flesh wound', serious: 'Serious injury', outOfAction: 'Out of action' };
 
-  function resultsBlock() {
+  function resultsBlock(quick) {
     const mk = (cls, key) => el('div', { class: 'odd ' + cls },
       el('div', { class: 'v', 'data-out': key, text: '0%' }),
       el('div', { class: 'k', text: LABELS[key] }));
@@ -1656,8 +1660,24 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
       el('div', { class: 'odds' }, mk('flesh', 'fleshWound'), mk('serious', 'serious'), mk('ooa', 'outOfAction')),
       bar,
       el('div', { class: 'minor', 'data-minor': '1' }),
+      quick || null,
       el('div', { class: 'warn hidden', 'data-warn': '1' }),
       el('div', { class: 'info hidden', 'data-notes': '1' }));
+  }
+
+  /* A one-tap copy of the cover / range save field, kept in the sticky results
+     block so it can be changed without scrolling down to the Target fieldset.
+     It mirrors the real control rather than binding a second one: readState
+     only sees [data-bind], and wire() keeps the two in step. */
+  function quickCover() {
+    const row = el('div', { class: 'quick', role: 'radiogroup', 'aria-label': 'Cover / range save modifier' },
+      el('span', { class: 'quick-label', text: 'Cover' }));
+    for (const [v, label] of [[0, 'None'], [1, 'Short +1'], [2, 'Long +2']]) {
+      const r = el('input', { type: 'radio', name: 'quick-rangeBand', value: String(v), 'data-mirror': 't.rangeBand' });
+      if (v === 0) r.checked = true;
+      row.appendChild(el('label', { class: 'chk' }, r, el('span', { text: label })));
+    }
+    return row;
   }
 
   function weaponFields(prefix, melee) {
@@ -1732,7 +1752,7 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
   }
 
   function buildRanged(root) {
-    root.appendChild(resultsBlock());
+    root.appendChild(resultsBlock(quickCover()));
     root.appendChild(group('Load a profile',
       field('Weapon', 'pick.weapon', weaponOpts(Data.ranged), ''),
       field('Target', 'pick.fighter', FIGHTER_OPTS, ''),
@@ -1928,7 +1948,24 @@ if (typeof module !== 'undefined') module.exports = Necromunda;
   function wire(root, melee) {
     let lastPick = { weapon: '', weapon2: '', fighter: '', fighter2: '' };
 
-    function recompute(fromPicker) {
+    /* Mirrors (data-mirror="bind") duplicate a real control elsewhere on the
+       panel. A change on either side lands on the other before state is read. */
+    function syncMirrors(ev) {
+      const src = ev && ev.target;
+      if (src && src.getAttribute && src.getAttribute('data-mirror') &&
+          (src.type !== 'radio' || src.checked)) {
+        setControl(root, src.getAttribute('data-mirror'), src.value);
+      }
+      root.querySelectorAll('[data-mirror]').forEach(m => {
+        const real = root.querySelector('[data-bind="' + m.getAttribute('data-mirror') + '"]');
+        if (!real) return;
+        if (m.type === 'radio') m.checked = (m.value === real.value);
+        else m.value = real.value;
+      });
+    }
+
+    function recompute(ev) {
+      syncMirrors(ev);
       const st = readState(root);
 
       // A picker only fills fields in; after that every field stays editable.

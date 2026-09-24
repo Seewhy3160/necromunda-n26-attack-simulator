@@ -22,6 +22,9 @@ this is exactly that engine, so it ships as its own file.
   or sampled. Alongside them sit the chances of coming through unharmed or merely
   wounded, so the five outcomes add up to 100%.
 * **Recomputes on every change.** There is no submit button.
+* **Cover is one tap away.** The short/long range save modifier is repeated as a row of
+  buttons under the headline figures, which stay pinned to the top of the page, so it can
+  be flipped without scrolling down to the Target fields. Either copy drives the other.
 
 It models one attacker, one weapon, one target, one activation. It does not roll dice,
 track a game, or reproduce rules text.

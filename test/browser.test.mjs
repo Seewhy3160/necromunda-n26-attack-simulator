@@ -84,6 +84,32 @@ t('every change recomputes on the spot, with no submit button', async () => {
   assert.deepEqual(await odds('panel-ranged'), before);
 });
 
+t('cover can be set from the pinned results block, in step with the Target field', async () => {
+  const before = await odds('panel-ranged');
+  const quick = '#panel-ranged .results .quick input[data-mirror="t.rangeBand"]';
+  assert.equal((await page.$$(quick)).length, 3);
+  assert.equal(await page.isChecked(quick + '[value="0"]'), true);
+
+  // One tap at the top lands on the real dropdown far below and recomputes.
+  await page.click('#panel-ranged .results .quick label:has(input[value="2"])');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="t.rangeBand"]'), '2');
+  const covered = await odds('panel-ranged');
+  assert.notDeepEqual(before, covered);
+  // Sv 6+ with +2 is a 4+: 3/6 x 4/6 x 3/6 unsaved, then a 6 on one Injury dice.
+  assert.equal(covered.ooa, '2.8%');
+
+  // And the other way round: the dropdown drives the quick row.
+  await setSel('panel-ranged', 't.rangeBand', 1);
+  assert.equal(await page.isChecked(quick + '[value="1"]'), true);
+  assert.equal(await page.isChecked(quick + '[value="2"]'), false);
+  await setSel('panel-ranged', 't.rangeBand', 0);
+  assert.equal(await page.isChecked(quick + '[value="0"]'), true);
+  assert.deepEqual(await odds('panel-ranged'), before);
+
+  // Melee has no range band, so no quick row either.
+  assert.equal(await page.$('#panel-melee .quick'), null);
+});
+
 t('picking a weapon fills the fields, which stay editable', async () => {
   await setSel('panel-ranged', 'pick.weapon', 'Boltgun');
   assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.str"]'), '4');
