@@ -97,6 +97,7 @@ table.val tr:last-child td{border-bottom:0}
 table.val td.n{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
 table.val td.good{color:var(--ok);font-weight:600}
 table.val td.bad{color:var(--ooa);font-weight:600}
+table.val td.thin{color:var(--accent)}
 .fitline{font-size:12.5px;color:var(--ink-dim);margin:0 0 10px}
 .fitline b{color:var(--ink);font-family:ui-monospace,Menlo,monospace}
 footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px 0;line-height:1.6}
@@ -774,6 +775,19 @@ const Pricing = (function () {
      expands that back out into the values the list actually uses. */
   const rate = (x) => x ? (7 - x) / 6 : 0;
 
+  /* A blast marker's worth is the ground it covers, and a 5" marker covers
+     (5/3)^2 of a 3" one. Left as two free flags the fit inverts them — only
+     four weapons carry the 5" marker and all of them are grenades, so the
+     coefficient chases what grenades cost rather than what the marker is
+     worth. Encoding the geometry keeps the ordering right by construction and
+     spends all seventeen blast weapons on one coefficient instead of splitting
+     them; the data still sets the scale, only the ratio is fixed. */
+  const BLAST_AREA = { '3': 1, '5': (5 / 3) * (5 / 3) };
+  const blastArea = (txt) => {
+    const m = txt.match(/Blast \((\d)"/);
+    return m ? BLAST_AREA[m[1]] || 1 : 0;
+  };
+
   function rangedFeatures(p) {
     const t = p.traits, txt = p.traitText || '';
     const ammo = (function () { const m = txt.match(/Ammo \((\d)\+\)/); return m ? +m[1] : 0; })();
@@ -781,13 +795,21 @@ const Pricing = (function () {
       'Strength': typeof p.str === 'number' ? p.str : 0,
       'no Strength': typeof p.str === 'number' ? 0 : 1,
       'AP, per point': -p.ap,
-      'Lethality': p.lethality || 0,
-      'Damage (X) over 1': t.damage - 1,
+      /* Lethality and Damage are ordered levels, so they are fitted as steps:
+         one feature for reaching 2, another for the further step to 3. Each
+         coefficient is then the price of that step, and a level's total price is
+         the steps below it added up, which cannot fall as the level rises the
+         way two independent flags can. */
+      'no Lethality': p.lethality === null ? 1 : 0,
+      'Lethality, step to 2': p.lethality >= 2 ? 1 : 0,
+      'Lethality, step to 3': p.lethality >= 3 ? 1 : 0,
+      'Damage, step to 2': t.damage >= 2 ? 1 : 0,
+      'Damage, step to 3': t.damage >= 3 ? 1 : 0,
       'Rapid Fire, per die': t.rapidFire,
       'Short range, per inch': inches(p.sr),
       'Long range, per inch': inches(p.lr),
       'Template': t.autoHit ? 1 : 0,
-      'Blast': t.blast ? 1 : 0,
+      'Blast': blastArea(txt),
       'Ammo, chance of running dry': ammo ? (ammo - 1) / 6 : 0,
       'Unstable': t.unstable ? 1 : 0,
       'Limited': /Limited/.test(txt) ? 1 : 0,
@@ -796,7 +818,7 @@ const Pricing = (function () {
       'Heavy': t.heavy ? 1 : 0,
       'Toxin': rate(t.toxin),
       'Knockback': rate(t.knockback),
-      'Blaze': t.blaze ? 1 : 0,
+      'Blaze': rate(t.blaze),
       'Web / Gas / Graviton': (t.web || t.gas || t.graviton) ? 1 : 0,
       'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
         !/^(Ammo|Damage|Rapid Fire|Template|Blast|Unstable|Limited|Single Shot|Light|Heavy|Toxin|Knockback|Blaze|Web|Gas|Graviton Pulse)/.test(x)).length
@@ -814,8 +836,9 @@ const Pricing = (function () {
     return {
       'Strength over S': sBonus,
       'AP, per point': -p.ap,
-      'Lethality': p.lethality || 0,
-      'Damage (X) over 1': t.damage - 1,
+      'Lethality, step to 2': p.lethality >= 2 ? 1 : 0,
+      'Lethality, step to 3': p.lethality >= 3 ? 1 : 0,
+      'Damage, step to 2': t.damage >= 2 ? 1 : 0,
       'Parry': t.parry ? 1 : 0,
       'Unwieldy': t.unwieldy ? 1 : 0,
       'Breaching': rate(t.breaching),
@@ -829,7 +852,15 @@ const Pricing = (function () {
 
   /* Which features are a trigger rate rather than a flag, and so can be shown
      at each (X+) the price list actually uses. */
-  const PARAMETRIC = ['Toxin', 'Knockback', 'Breaching', 'Shock', 'Concussive'];
+  const PARAMETRIC = ['Toxin', 'Knockback', 'Breaching', 'Shock', 'Concussive', 'Blaze'];
+  /* Shown at each marker size, scaled by the area it covers. */
+  const AREA_SCALED = { 'Blast': [['3\u2033', 1], ['5\u2033', (5 / 3) * (5 / 3)]] };
+
+  /* Ordered levels: a level's price is every step up to it, added together. */
+  const STEPPED = {
+    'Lethality': ['Lethality, step to 2', 'Lethality, step to 3'],
+    'Damage': ['Damage, step to 2', 'Damage, step to 3']
+  };
 
   function observedValues(set, trait) {
     const found = {};
@@ -856,18 +887,51 @@ const Pricing = (function () {
       name: p.name, cost: Data.costs[p.name], model: score(p),
       diff: Data.costs[p.name] - score(p), held: Data.isMultiProfile(p.name)
     })).sort((a, b) => a.diff - b.diff);
+    /* How many fitted weapons actually carry a feature. A coefficient resting on
+       one or two weapons is describing those weapons, not a market price. */
+    const support = names.map((n, j) => X.filter(r => r[j] !== 0).length);
+    const carrying = (trait, x) => fit.filter(p =>
+      new RegExp(trait + ' \\(' + x + '\\+\\)').test(p.traitText || '')).length;
+
     const shown = [];
+    const coefOf = (name) => { const j = names.indexOf(name); return j < 0 ? null : m.coef[j]; };
+    const countAtLeast = (which, level) => fit.filter(p =>
+      (which === 'Lethality' ? p.lethality : p.traits.damage) >= level).length;
+
+    for (const family in STEPPED) {
+      let running = 0;
+      STEPPED[family].forEach((step, i) => {
+        const c = coefOf(step);
+        if (c === null) return;
+        running += c;
+        shown.push({ name: family + ' ' + (i + 2), credits: running,
+                     weapons: countAtLeast(family, i + 2) });
+      });
+    }
+    const stepNames = [].concat.apply([], Object.keys(STEPPED).map(k => STEPPED[k]));
+
     names.forEach((n, j) => {
+      if (stepNames.indexOf(n) >= 0) return;      // already shown as a level
+      if (AREA_SCALED[n]) {
+        for (const pair of AREA_SCALED[n]) {
+          const carried = fit.filter(p =>
+            new RegExp('Blast \\(' + pair[0][0] + '"').test(p.traitText || '')).length;
+          if (carried) shown.push({ name: n + ' (' + pair[0] + ')',
+                                    credits: m.coef[j] * pair[1], weapons: carried });
+        }
+        return;
+      }
       if (PARAMETRIC.indexOf(n) >= 0) {
         const vals = observedValues(set, n);
         if (vals.length) {
           for (const x of vals) {
-            shown.push({ name: n + ' (' + x + '+)', credits: m.coef[j] * (7 - x) / 6 });
+            shown.push({ name: n + ' (' + x + '+)', credits: m.coef[j] * (7 - x) / 6,
+                         weapons: carrying(n, x), sharedWith: vals.length > 1 ? 0 : support[j] });
           }
           return;
         }
       }
-      shown.push({ name: n, credits: m.coef[j] });
+      shown.push({ name: n, credits: m.coef[j], weapons: support[j] });
     });
     return {
       n: fit.length, r2: m.r2, mae: m.mae, intercept: m.intercept,
@@ -1469,8 +1533,10 @@ if (typeof module !== 'undefined') module.exports = Pricing;
         'Fitted on <b>' + m.n + '</b> weapons. Explains <b>' + (m.r2 * 100).toFixed(1) +
         '%</b> of the price, typical error <b>\u00b1' + m.mae.toFixed(1) + 'c</b>.' });
       const coef = section(label + ' \u2014 what the market charges',
-        table(['Feature', 'Credits'], m.coefficients.map(c => [
-          c.name, { text: credits(c.credits), cls: 'n ' + (c.credits < 0 ? 'good' : '') }])));
+        table(['Feature', 'Credits', 'Weapons'], m.coefficients.map(c => [
+          c.name,
+          { text: credits(c.credits), cls: 'n ' + (c.credits < 0 ? 'good' : '') },
+          { text: String(c.weapons), cls: 'n' + (c.weapons <= 2 ? ' thin' : '') }])));
       coef.insertBefore(fit, coef.childNodes[1]);
       root.appendChild(coef);
     }
@@ -1482,11 +1548,20 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       'fixed</i>. With only ~40 weapons, treat the sign and rough size as the signal and the ' +
       'decimals as noise.' }));
     body.appendChild(el('p', { html:
-      '<b>Traits written (X+) are priced by how often they fire, not as a yes or no.</b> ' +
-      'Breaching (5+) triggers on two faces in six and Breaching (6+) on one, so they are ' +
-      'listed separately and the first is worth twice the second. A trait whose threshold ' +
-      'never varies across the list, such as Blaze at (5+), stays a single figure \u2014 there is ' +
-      'no variation to read a rate from, so its price and its threshold cannot be separated.' }));
+      '<b>More of a good thing never prices for less here.</b> Traits written (X+) are fitted ' +
+      'as how often they fire, so Breaching (5+) is worth exactly twice Breaching (6+), and a ' +
+      'Blaze (4+) would price above Blaze (5+) if the list carried one. Lethality and Damage ' +
+      'are fitted as steps \u2014 the price of reaching 2, then the further step to 3 \u2014 so a level ' +
+      'is every step below it added up and cannot come out under the level beneath it.' }));
+    body.appendChild(el('p', { html:
+      '<b>Blast is priced by the ground it covers.</b> A 5\u2033 marker takes in (5/3)\u00b2 of a 3\u2033 one, ' +
+      'so that ratio is set and only its scale is fitted. Left as two free flags the fit put the ' +
+      '5\u2033 marker <i>below</i> the 3\u2033: four weapons carry it, all grenades, so the figure chased ' +
+      'what grenades cost rather than what the marker is worth.' }));
+    body.appendChild(el('p', { html:
+      'The <b>Weapons</b> column is how many weapons carry each feature. A figure resting on ' +
+      'one or two is describing those weapons rather than a market rate \u2014 read it as an ' +
+      'observation about the meltagun, not as the price of Damage (3).' }));
     body.appendChild(el('p', { html:
       '<b>The drawbacks do not come out as discounts, and that is an artefact.</b> Ammo (X+), ' +
       'Unstable and Heavy all show a premium, because they sit on better weapons: those with ' +

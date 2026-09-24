@@ -297,14 +297,21 @@ t('(X+) traits are priced per threshold, not as a flag', async () => {
     [...tr.children].map(td => td.textContent)));
   const find = (n) => rows.find(r => r[0] === n);
 
-  // Breaching (5+) fires twice as often as (6+) and must be priced accordingly.
-  const b5 = find('Breaching (5+)'), b6 = find('Breaching (6+)');
-  assert.ok(b5 && b6, 'both Breaching thresholds should be listed');
+  // The panel must show each threshold, in the right order. The exact ratio is
+  // checked in pricing.test.mjs, where figures are not rounded for display.
   const val = (c) => parseFloat(c.replace('−', '-').replace('+', ''));
-  assert.ok(Math.abs(val(b5[1]) / val(b6[1]) - 2) < 0.01,
-    `Breaching (5+) ${b5[1]} should be double (6+) ${b6[1]}`);
+  for (const [low, high] of [['Breaching (6+)', 'Breaching (5+)'],
+                             ['Shock (6+)', 'Shock (5+)'],
+                             ['Toxin (4+)', 'Toxin (3+)'],
+                             ['Blast (3″)', 'Blast (5″)'],
+                             ['Lethality 2', 'Lethality 3'],
+                             ['Damage 2', 'Damage 3']]) {
+    const a = find(low), b = find(high);
+    assert.ok(a && b, `both ${low} and ${high} should be listed`);
+    assert.ok(val(b[1]) > val(a[1]), `${high} ${b[1]} should cost more than ${low} ${a[1]}`);
+  }
 
-  assert.ok(find('Toxin (3+)') && find('Toxin (4+)'), 'Toxin thresholds should be separate');
   assert.ok(!find('Breaching / Shock'), 'Breaching and Shock must not be merged');
-  assert.match(await page.textContent('#panel-value'), /priced by how often they fire/);
+  assert.match(await page.textContent('#panel-value'), /More of a good thing never prices for less/);
+  assert.match(await page.textContent('#panel-value'), /priced by the ground it covers/);
 });

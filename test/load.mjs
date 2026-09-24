@@ -14,3 +14,10 @@ export function loadScript(id) {
   new Function('module', m[1])(mod);
   return mod.exports;
 }
+
+/** The price model needs the data block in scope, so both are evaluated together. */
+export function loadPricing() {
+  const src = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const grab = (id) => src.match(new RegExp(`<script id="${id}">([\\s\\S]*?)<\\/script>`))[1];
+  return new Function('module', grab('data') + '\n' + grab('pricing') + '\nreturn Pricing;')({ exports: {} });
+}
