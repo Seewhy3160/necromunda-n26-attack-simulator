@@ -272,6 +272,8 @@ t('the Value tab prices each stat from the Trading Post', async () => {
 
   // The sign constraint and its reason must be stated, not buried.
   assert.match(text, /never allowed to add credits/);
+  assert.match(text, /balance mechanic, not a price/);
+  assert.match(text, /matched pairs exist, trust them over the fit/);
   assert.match(text, /45% of a weapon/);
   // A level whose total is real must show that total, not the boundary marker.
   const cells = await page.$$eval('#panel-value table.val tr', trs => trs.map(tr =>

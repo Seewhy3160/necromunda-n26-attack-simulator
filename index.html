@@ -1688,24 +1688,36 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       'one or two is describing those weapons rather than a market rate \u2014 read it as an ' +
       'observation about the meltagun, not as the price of Damage (3).' }));
     body.appendChild(el('p', { html:
-      '<b>A drawback is never allowed to add credits, and an advantage is never allowed to ' +
-      'subtract them.</b> Left free, every drawback came out as a premium: the price list hangs ' +
-      'them on its strongest weapons, so Ammo (5+) and (6+) weapons average a point more ' +
-      'Strength, a point more AP and half a step more Lethality than weapons with no Ammo ' +
-      'trait, and every Unwieldy weapon is a big two-handed thing. The fit was reading them as ' +
-      'markers for those weapons rather than as penalties. Ammo, Unstable, Heavy, Unwieldy, ' +
-      'Limited, Single Shot and Scarce are now held at or below zero, and Strength, AP, ' +
-      'Lethality, Damage, Rapid Fire, Template, Blast and the (X+) benefits at or above it. ' +
-      'Anything shown as <b>held at 0</b> hit that boundary, and its apparent value has gone ' +
-      'back onto the stats it was standing in for.' }));
+      '<b>The drawbacks are a balance mechanic, not a price.</b> Left free, every one of them ' +
+      'came out as a <i>premium</i>: Ammo (5+) and (6+) weapons average a point more Strength, ' +
+      'a point more AP and half a step more Lethality than weapons with no Ammo trait, and ' +
+      'every Unwieldy weapon is a big two-handed thing. The cause runs the opposite way to what ' +
+      'a fit assumes \u2014 the weapon is not dear because it jams, it jams <i>because</i> it is ' +
+      'strong, and the drawback was hung on it as a counterweight. So the fit reads those ' +
+      'traits as labels for powerful weapons and prices them accordingly.' }));
+    body.appendChild(el('p', { html:
+      'That being so, <b>a drawback is never allowed to add credits here, and an advantage is ' +
+      'never allowed to subtract them.</b> Ammo, Unstable, Heavy, Unwieldy, Limited, Single ' +
+      'Shot and Scarce are held at or below zero; Strength, AP, Lethality, Damage, Rapid Fire, ' +
+      'Template, Blast and the (X+) benefits at or above it. Anything marked <b>held at 0</b> ' +
+      'hit that boundary, and the value it was absorbing has gone back onto the stats it was ' +
+      'standing in for.' }));
     body.appendChild(el('p', { html:
       'That costs a little accuracy \u2014 the flat-rate error rises from about 4.3c to 4.7c on ' +
       'ranged weapons \u2014 and buys a model that cannot tell you a penalty is worth paying for. ' +
-      'It does not mean the drawbacks are free: the Trading Post never sells the same weapon ' +
-      'with and without Ammo, so their price simply cannot be read off this list. In play the ' +
-      'cost is real, and large \u2014 Ammo (6+) takes roughly 45% of a weapon\u2019s firing uptime. ' +
-      '<b>Light</b> and <b>Limited</b> are left free to go either way, and both settle negative ' +
-      'on their own: those have matched pairs across the list to be read from.' }));
+      'It does not make the drawbacks free. Their price cannot be read off a list that never ' +
+      'sells the same weapon with and without them, but in play the cost is real and large: ' +
+      'Ammo (6+) takes roughly 45% of a weapon\u2019s firing uptime. <b>Light</b> and ' +
+      '<b>Limited</b> are left free to fall either way and both settle negative on their own, ' +
+      'because for those the list does carry matched pairs.' }));
+    body.appendChild(el('p', { html:
+      '<b>Where matched pairs exist, trust them over the fit.</b> Rapid Fire is the clearest ' +
+      'case: the autogun costs 5c more than the lasgun and the autopistol 5c more than the ' +
+      'stub gun, each pair otherwise alike but for the extra die and a little short range. ' +
+      'So the first Rapid Fire die is worth about <b>+5c</b>, even though the whole-list fit ' +
+      'pushes it to its boundary \u2014 there it is tangled up with the auto and bolt families and ' +
+      'with Ammo, which is held at zero. The Rapid Fire 2 figure rests on two weapons, both ' +
+      'Heavy, so it is carrying some of what Heavy would have taken.' }));
     body.appendChild(el('p', { html:
       'Shotgun ammo types and grenade launcher rounds are left out: one price buys several ' +
       'profiles, so scoring one of them understates what the credits bought. Trading Post ' +
