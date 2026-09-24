@@ -327,3 +327,40 @@ t('(X+) traits are priced per threshold, not as a flag', async () => {
   assert.match(await page.textContent('#panel-value'), /More of a good thing never prices for less/);
   assert.match(await page.textContent('#panel-value'), /priced by the ground it covers/);
 });
+
+t('gang list weapons are off by default and can be switched on per House', async () => {
+  await page.click('#tab-ranged');
+  const count = () => page.$$eval('#panel-ranged [data-bind="pick.weapon"] option', o => o.length);
+  const tradingPostOnly = await count();
+  assert.equal(await page.isVisible('#opt-which'), false, 'the gang picker hides until asked for');
+  assert.match(await page.textContent('#opt-note'), /Trading Post only/);
+
+  await page.setChecked('#opt-gang', true);
+  assert.equal(await page.isVisible('#opt-which'), true);
+  const withAll = await count();
+  assert.ok(withAll > tradingPostOnly, 'ticking the box should add weapons');
+  assert.match(await page.textContent('#opt-note'), /House lists/);
+
+  await page.selectOption('#opt-which', 'Delaque');
+  const delaque = await count();
+  assert.ok(delaque < withAll && delaque > tradingPostOnly, 'one House adds fewer than all of them');
+  assert.match(await page.textContent('#opt-note'), /Delaque list/);
+
+  // A gang weapon must be selectable and fill the fields like any other.
+  await page.selectOption('#panel-ranged [data-bind="pick.weapon"]', 'Flechette pistol');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.toxin"]'), '3');
+  assert.equal(await page.inputValue('#panel-ranged [data-bind="w1.rapidFire"]'), '1');
+
+  await page.setChecked('#opt-gang', false);
+  assert.equal(await count(), tradingPostOnly, 'unticking should restore the Trading Post list');
+});
+
+t('the Value tab shows Trade Points and explains the House advantage', async () => {
+  await page.click('#tab-value');
+  const head = await page.$$eval('#panel-value table.val th', ths => ths.map(t => t.textContent));
+  assert.ok(head.includes('TP'), 'standouts should carry a Trade Points column');
+  const text = await page.textContent('#panel-value');
+  assert.match(text, /Credits are only half the price/);
+  assert.match(text, /real House advantage/);
+  assert.match(text, /108 such prices/);
+});

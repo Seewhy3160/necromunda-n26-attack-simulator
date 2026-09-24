@@ -89,6 +89,12 @@ details p{margin:0 0 8px;font-size:13px;color:var(--ink-dim)}
 details code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:12px}
 .note{font-size:12px;color:var(--ink-faint);margin:6px 0 0}
 .hidden{display:none !important}
+.scope{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 14px}
+.scope select{appearance:none;background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+  border-radius:20px;padding:8px 28px 8px 12px;font:13.5px/1.2 inherit;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%23a0a4bb'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center}
+.scope .note{flex:1 1 100%;margin:0}
 table.val{width:100%;border-collapse:collapse;font-size:13.5px;margin:2px 0 0}
 table.val th{text-align:left;font-weight:600;color:var(--ink-dim);font-size:11.5px;
   text-transform:uppercase;letter-spacing:.4px;padding:0 6px 6px 0;border-bottom:1px solid var(--line)}
@@ -117,6 +123,12 @@ footer{color:var(--ink-faint);font-size:12px;text-align:center;padding:22px 14px
   <button role="tab" id="tab-ranged" aria-controls="panel-ranged" aria-selected="true">Ranged</button>
   <button role="tab" id="tab-melee" aria-controls="panel-melee" aria-selected="false">Melee</button>
   <button role="tab" id="tab-value" aria-controls="panel-value" aria-selected="false">Value</button>
+</div>
+
+<div class="scope">
+  <label class="chk"><input type="checkbox" id="opt-gang"><span>Include gang list weapons</span></label>
+  <select id="opt-which" class="hidden" aria-label="Which gang list"></select>
+  <p class="note" id="opt-note"></p>
 </div>
 
 <section id="panel-ranged" role="tabpanel" aria-labelledby="tab-ranged"></section>
@@ -693,15 +705,108 @@ const Data = (function () {
     'Stiletto knife': 25, 'Stiletto sword': 45
   };
 
+  /* Trade Points are the Trading Post's second price (p92): a weapon costs
+     credits AND trade points. A gang list sells its own weapons for credits
+     alone, so buying from the house list dodges this cost entirely. */
+  const TRADE_POINTS = {
+    'Autogun': 0, 'Autopistol': 0, 'Heavy stubber': 2, 'Long rifle': 1, 'Stub gun': 0,
+    'Boltgun': 2, 'Bolt pistol': 1, 'Heavy bolter': 3, 'Warpstorm bolter': 4,
+    'Flamer': 1, 'Hand flamer': 1, 'Heavy flamer': 2, 'Grav gun': 4, 'Grav pistol': 3,
+    'Lasgun': 0, 'Laspistol': 0, 'Long las': 1, 'Meltagun': 4, 'Multi-melta': 4,
+    'Plasma cannon': 4, 'Plasma gun': 3, 'Plasma pistol': 3, 'Throwing knives': 0,
+    'Rad cannon': 4, 'Rad gun': 3, 'Harpoon launcher': 3, 'Las cutter': 3,
+    'Mining laser': 3, 'Needle pistol': 1, 'Needle rifle': 2, 'Web gun': 4, 'Web pistol': 3,
+    'Blasting charges': 2, 'Choke gas grenades': 1, 'Demo charges': 3, 'Frag grenades': 0,
+    'Incendiary charges': 2, 'Krak grenades': 1, 'Phosphor canisters': 3,
+    'Photon flash grenades': 1, 'Plasma grenades': 3, 'Rad grenades': 1, 'Smoke grenades': 0,
+    'Chainaxe': 1, 'Chainsword': 1, 'Power axe': 1, 'Power fist': 3, 'Power hammer': 2,
+    'Power knife': 1, 'Power maul': 1, 'Power sword': 2, 'Axe': 0, 'Fighting knife': 0,
+    'Flail': 0, 'Maul': 0, 'Two-handed axe': 1, 'Two-handed hammer': 1, 'Servo-claw': 1,
+    'Shock baton': 1, 'Shock stave': 1, 'Shock whip': 1, 'Stiletto knife': 2, 'Stiletto sword': 2,
+    'Combat shotgun - salvo ammo': 1, 'Combat shotgun - shredder ammo': 1,
+    'Sawn-off shotgun - scatter shot': 1, 'Sawn-off shotgun - solid shot': 1,
+    'Shotgun - scatter ammo': 0, 'Shotgun - solid ammo': 0,
+    'Grenade launcher - frag': 1, 'Grenade launcher - krak': 1,
+    'Grenade launcher - photon flash': 1, 'Grenade launcher - smoke': 1
+  };
+
+  /* Weapons from the House gang lists that the Trading Post does not sell, with
+     the prices those lists give them. Safe to use alongside the Trading Post
+     because the two agree: across the five lists, 108 prices are quoted for
+     weapons the Trading Post also sells and every one matches.
+
+     [name, gang, cost, SR, LR, Str, AP, Lethality, traits] */
+  const GANG_RANGED = [
+    ['Stub cannon', 'Goliath', 35, '9"', '18"', 5, 0, 1, 'Knockback (5+)'],
+    ['Ignition cannon', 'Goliath', 110, '5"', '10"', 6, -2, 2, 'Ammo (6+), Blaze (5+), Damage (2)'],
+    ["'Krumper' rivet cannon", 'Goliath', 45, '3"', '9"', 4, -1, 1, 'Assault, Blaze (5+), Rapid Fire (1)'],
+    ['Storm welder', 'Goliath', 60, '8"', '16"', 5, 0, 1, 'Rapid Fire (3), Shock (6+), Unstable'],
+    ['Flechette pistol', 'Delaque', 35, '4"', '12"', null, 0, 1, 'Light, Rapid Fire (1), Toxin (3+)'],
+    ['Wyld bow', 'Escher', 15, '9"', '18"', 3, 0, 1, 'Assault'],
+    ["'Nightshade' chem-thrower", 'Escher', 95, 'T', '-', null, 0, 1, 'Ammo (6+), Gas, Template, Toxin (3+)'],
+    ['Combi-pistol (stub gun / plasma pistol)', 'Goliath', 75, '6"', '12"', 3, 0, 1, 'Combi, Light'],
+    ['Assault grenade launcher (frag)', 'Goliath', 45, '6"', '24"', 3, 0, 1, 'Ammo (4+), Blast (3"), Knockback (6+), Rapid Fire (1)'],
+    ['Combi-weapon (bolter / needler)', 'Escher', 70, '12"', '24"', 4, -1, 2, 'Ammo (3+), Combi, Rapid Fire (1), Scarce (4+)'],
+    ['Shotgun - acid ammo', 'Escher', 50, '4"', '8"', 3, -1, 1, 'Blaze (5+), Rapid Fire (1)']
+  ];
+
+  const GANG_MELEE = [
+    ['Cleaver', 'Goliath', 25, 'S', -1, 2, 'Melee'],
+    ["'Pulverizer' serrated axe", 'Goliath', 35, 'S', -2, 2, 'Melee'],
+    ["Paired 'Pulverizers'", 'Goliath', 55, 'S', -2, 2, 'Melee, Paired (2)'],
+    ["'Renderizer' serrated axe", 'Goliath', 65, 'S+2', -1, 2, 'Damage (2), Heavy, Melee, Unwieldy'],
+    ['Crucible hooks', 'Goliath', 60, 'S+1', -2, 2, 'Melee, Paired (2)'],
+    ['Forge axe', 'Goliath', 45, 'S+1', -1, 2, 'Heavy, Melee, Parry, Unwieldy'],
+    ['Forge hammer', 'Goliath', 45, 'S+1', 0, 3, 'Heavy, Knockback (5+), Melee, Unwieldy'],
+    ['Servo arm', 'Goliath', 65, 'S+3', 0, 2, 'Concussive (5+), Melee, Unwieldy'],
+    ['Heavy rock saw', 'Goliath', 100, 'S+3', -3, 2, 'Damage (2), Heavy, Melee, Unwieldy'],
+    ['Spud-jacker', 'Goliath', 25, 'S+1', 0, 1, 'Concussive (6+), Knockback (6+), Melee'],
+    ['Paired spud-jackers', 'Goliath', 40, 'S+1', 0, 1, 'Concussive (6+), Knockback (6+), Melee, Paired (2)'],
+    ['Psychomantic claws', 'Delaque', 65, 'S+1', -3, 1, 'Melee, Paired (2)'],
+    ["Serpent's fangs", 'Delaque', 70, null, -3, 1, 'Melee, Paired (2), Toxin (3+)'],
+    ['Shivver sword', 'Delaque', 50, 'S+1', -1, 2, 'Melee, Parry'],
+    ['Web gauntlet', 'Delaque', 10, 3, 0, null, 'Backstab, Melee, Web'],
+    ['Whip', 'Escher', 5, 'S', 0, 1, 'Knockback (6+), Melee'],
+    ['Venom claw', 'Escher', 50, null, -2, 1, 'Melee, Shred (5+), Toxin (3+)'],
+    ['Arc hammer', 'Orlock', 70, 'S+3', -1, 3, 'Concussive (5+), Heavy, Knockback (5+), Melee, Unwieldy']
+  ];
+
+  const GANGS = ['Goliath', 'Delaque', 'Escher', 'Orlock', 'Van Saar'];
+
+  const gangRanged = GANG_RANGED.map(r => ({
+    name: r[0], gang: r[1], creds: r[2], cat: r[1] + ' list', sr: r[3], lr: r[4],
+    str: r[5], ap: r[6], lethality: r[7], traitText: r[8], traits: parseTraits(r[8])
+  }));
+  const gangMelee = GANG_MELEE.map(r => ({
+    name: r[0], gang: r[1], creds: r[2], cat: r[1] + ' list', sr: 'E', lr: '-',
+    str: r[3], ap: r[4], lethality: r[5], traitText: r[6], traits: parseTraits(r[6])
+  }));
+
   /* One price buys every profile of these, so a single profile understates what
      the credits bought. They are scored but held out of the fit. */
   const MULTI_PROFILE = [
     'Combat shotgun', 'Sawn-off shotgun', 'Shotgun -', 'Grenade launcher'
   ];
-  const isMultiProfile = (name) => MULTI_PROFILE.some(p => name.indexOf(p) === 0);
+  const GANG_MULTI = ['Combi-pistol', 'Assault grenade launcher', 'Combi-weapon', 'Shotgun - acid'];
+  const isMultiProfile = (name) =>
+    MULTI_PROFILE.concat(GANG_MULTI).some(p => name.indexOf(p) === 0);
+
+  /* The weapon list to offer, given whether gang lists are allowed and which.
+     Off by default so the Trading Post is not swamped by house-only kit. */
+  function weapons(kind, opts) {
+    const base = kind === 'melee' ? meleeUsable : ranged;
+    if (!opts || !opts.includeGang) return base;
+    const extra = (kind === 'melee' ? gangMelee : gangRanged)
+      .filter(w => !opts.gang || opts.gang === 'all' || w.gang === opts.gang);
+    return base.concat(extra);
+  }
+
+  const priceOf = (p) => p.creds !== undefined ? p.creds : COSTS[p.name];
 
   return { ranged: ranged, melee: meleeUsable, fighters: FIGHTERS, parseTraits: parseTraits,
-           costs: COSTS, isMultiProfile: isMultiProfile };
+           costs: COSTS, isMultiProfile: isMultiProfile,
+           gangRanged: gangRanged, gangMelee: gangMelee, gangs: GANGS,
+           weapons: weapons, priceOf: priceOf, tradePoints: TRADE_POINTS };
 })();
 if (typeof module !== 'undefined') module.exports = Data;
 </script>
@@ -839,17 +944,23 @@ const Pricing = (function () {
     return {
       'Strength over S': sBonus,
       'AP, per point': -p.ap,
+      'no Lethality': p.lethality === null ? 1 : 0,
       'Lethality, step to 2': p.lethality >= 2 ? 1 : 0,
       'Lethality, step to 3': p.lethality >= 3 ? 1 : 0,
       'Damage, step to 2': t.damage >= 2 ? 1 : 0,
       'Parry': t.parry ? 1 : 0,
+      'Paired (X)': t.paired,
       'Unwieldy': t.unwieldy ? 1 : 0,
+      'Heavy': t.heavy ? 1 : 0,
       'Breaching': rate(t.breaching),
       'Shock': rate(t.shock),
       'Concussive': rate(t.concussive),
+      'Knockback': rate(t.knockback),
+      'Shred': rate(t.shred),
       'Toxin': t.toxin ? 1 : 0,
+      'Web': t.web ? 1 : 0,
       'other traits': txt.split(',').map(x => x.trim()).filter(x => x &&
-        !/^(Melee|Damage|Parry|Unwieldy|Heavy|Breaching|Shock|Concussive|Toxin)/.test(x)).length
+        !/^(Melee|Damage|Parry|Paired|Unwieldy|Heavy|Breaching|Shock|Concussive|Knockback|Shred|Toxin|Web)/.test(x)).length
     };
   }
 
@@ -896,7 +1007,7 @@ const Pricing = (function () {
   /* And the mirror: things the rules make an advantage cannot subtract from
      what a weapon is worth either. Left free, Rapid Fire 1 came out negative. */
   const BENEFITS = ['Strength', 'Strength over S', 'AP, per point', 'Template', 'Blast',
-                    'Short range, per inch', 'Long range, per inch', 'Parry',
+                    'Short range, per inch', 'Long range, per inch', 'Parry', 'Paired (X)', 'Shred',
                     'Toxin', 'Knockback', 'Breaching', 'Shock', 'Concussive', 'Blaze',
                     'Lethality, step to 2', 'Lethality, step to 3',
                     'Damage, step to 2', 'Damage, step to 3',
@@ -954,12 +1065,15 @@ const Pricing = (function () {
     return { additive: additive, multiplicative: logged };
   }
 
-  /* Build one model. `set` is a list of profiles that all carry a price. */
+  /* Build one model from any list of priced profiles. Each needs `creds`, and
+     `multiProfile` set where one price buys more than one profile. Exported so
+     other work can fit a larger set through exactly this code rather than
+     keeping a second copy of it. */
   function model(set, extract) {
-    const fit = set.filter(p => !Data.isMultiProfile(p.name));
+    const fit = set.filter(p => !p.multiProfile);
     const names = Object.keys(extract(fit[0]));
     const X = fit.map(p => Object.values(extract(p)));
-    const y = fit.map(p => Data.costs[p.name]);
+    const y = fit.map(p => p.creds);
     const both = fitBoth(X, y, LAMBDA, names);
     /* Whichever predicts the actual credit prices more closely leads; the other
        is reported beside it so the choice is visible rather than assumed. */
@@ -973,8 +1087,8 @@ const Pricing = (function () {
         : m.intercept + f.reduce((a, v, j) => a + v * m.coef[j], 0);
     };
     const residuals = set.map(p => ({
-      name: p.name, cost: Data.costs[p.name], model: score(p),
-      diff: Data.costs[p.name] - score(p), held: Data.isMultiProfile(p.name)
+      name: p.name, cost: p.creds, model: score(p),
+      diff: p.creds - score(p), held: !!p.multiProfile
     })).sort((a, b) => a.diff - b.diff);
     /* How many fitted weapons actually carry a feature. A coefficient resting on
        one or two weapons is describing those weapons, not a market price. */
@@ -1046,25 +1160,32 @@ const Pricing = (function () {
     };
   }
 
-  function build() {
+  /* Attach the Trading Post price and the multi-profile flag to a profile. */
+  function priceUp(p) {
+    return Object.assign({}, p, { creds: Data.priceOf(p),
+                                  multiProfile: Data.isMultiProfile(p.name) });
+  }
+
+  function build(opts) {
     const priced = (list) => {
       const seen = {}, out = [];
       for (const p of list) {
-        if (Data.costs[p.name] === undefined || seen[p.name]) continue;
-        seen[p.name] = 1; out.push(p);
+        if (Data.priceOf(p) === undefined || seen[p.name]) continue;
+        seen[p.name] = 1; out.push(priceUp(p));
       }
       return out;
     };
-    const rangedSet = priced(Data.ranged);
-    const meleeSet = priced(Data.melee.filter(p => p.traits.melee));
+    const rangedSet = priced(Data.weapons('ranged', opts));
+    const meleeSet = priced(Data.weapons('melee', opts).filter(p => p.traits.melee));
     return {
       ranged: model(rangedSet, rangedFeatures),
       melee: model(meleeSet, meleeFeatures)
     };
   }
 
-  return { build: build, ridge: ridge, LAMBDA: LAMBDA,
-           rangedFeatures: rangedFeatures, meleeFeatures: meleeFeatures };
+  return { build: build, model: model, ridge: ridge, LAMBDA: LAMBDA,
+           rangedFeatures: rangedFeatures, meleeFeatures: meleeFeatures,
+           DRAWBACKS: DRAWBACKS, BENEFITS: BENEFITS };
 })();
 if (typeof module !== 'undefined') module.exports = Pricing;
 </script>
@@ -1483,12 +1604,15 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       const st = readState(root);
 
       // A picker only fills fields in; after that every field stays editable.
+      /* Look the pick up in whatever list is currently on offer, so a gang
+         weapon fills the fields exactly as a Trading Post one does. */
+      const offered = () => Data.weapons(melee ? 'melee' : 'ranged', scope);
       if (st.pick.weapon && st.pick.weapon !== lastPick.weapon) {
-        const p = (melee ? Data.melee : Data.ranged).find(x => x.name === st.pick.weapon);
+        const p = offered().find(x => x.name === st.pick.weapon);
         if (p) applyWeapon(root, 'w1', p, melee);
       }
       if (melee && st.pick.weapon2 && st.pick.weapon2 !== lastPick.weapon2) {
-        const p = Data.melee.find(x => x.name === st.pick.weapon2);
+        const p = offered().find(x => x.name === st.pick.weapon2);
         if (p) { applyWeapon(root, 'w2', p, true); setControl(root, 'a.useSecondary', true); }
       }
       if (st.pick.fighter && st.pick.fighter !== lastPick.fighter) {
@@ -1552,8 +1676,8 @@ if (typeof module !== 'undefined') module.exports = Pricing;
         if (s.w1.light && dice > 1) notes.push('Light: only one attack may ever be made with it, however many Attack dice the fighter has (p163).');
       }
 
-      const picked = (melee ? Data.melee : Data.ranged).find(x => x.name === s.pick.weapon);
-      const picked2 = melee ? Data.melee.find(x => x.name === s.pick.weapon2) : null;
+      const picked = offered().find(x => x.name === s.pick.weapon);
+      const picked2 = melee ? offered().find(x => x.name === s.pick.weapon2) : null;
       const line = root.querySelector('[data-profile]');
       const lines = [];
       if (picked) lines.push(profileLine(picked));
@@ -1613,9 +1737,14 @@ if (typeof module !== 'undefined') module.exports = Pricing;
   function standouts(model, best) {
     const fitted = model.residuals.filter(r => !r.held);
     const rows = (best ? fitted.slice(0, 8) : fitted.slice(-8).reverse());
-    return table(['Weapon', 'Costs', 'Worth', 'Difference'], rows.map(r => [
+    const tp = (n) => {
+      const v = Data.tradePoints[n];
+      return v === undefined ? '\u2014' : (v === 0 ? '0' : String(v));
+    };
+    return table(['Weapon', 'Costs', 'TP', 'Worth', 'Difference'], rows.map(r => [
       r.name,
       { text: r.cost + 'c', cls: 'n' },
+      { text: tp(r.name), cls: 'n dim' },
       { text: Math.round(r.model) + 'c', cls: 'n' },
       { text: whole(r.diff) + 'c', cls: 'n ' + (r.diff < 0 ? 'good' : 'bad') }
     ]));
@@ -1625,8 +1754,8 @@ if (typeof module !== 'undefined') module.exports = Pricing;
     return el('fieldset', {}, el('legend', { text: title }), node);
   }
 
-  function buildValue(root) {
-    const M = Pricing.build();
+  function buildValue(root, opts) {
+    const M = Pricing.build(opts);
 
     root.appendChild(el('p', { class: 'sub',
       text: 'What the Trading Post charges for each stat, worked out from its own price list. ' +
@@ -1684,6 +1813,19 @@ if (typeof module !== 'undefined') module.exports = Pricing;
       'multiplier would look like. Seven weapons is not enough to act on, and the whole-list ' +
       'comparison points the other way, so it stays an observation rather than a change.' }));
     body.appendChild(el('p', { html:
+      '<b>Credits are only half the price.</b> The Trading Post also charges <b>Trade Points</b>, ' +
+      'shown in the TP column, and they run from 0 on a lasgun to 4 on a meltagun or grav gun \u2014 ' +
+      'so the weapons that cost the most credits generally cost the most of the scarcer currency ' +
+      'too. None of the figures on this page price that in, because TP is not denominated in ' +
+      'credits and there is no exchange rate to read off the list.' }));
+    body.appendChild(el('p', { html:
+      '<b>That is the real House advantage.</b> A gang buying from its own list pays credits ' +
+      'alone. A Van Saar Tek takes a las carbine for 20 credits and no Trade Points; the same ' +
+      'gang reaching for a meltagun through the Trading Post pays 140 credits <i>and</i> 4 TP. ' +
+      'Where a weapon appears on both, the credit price is identical \u2014 108 such prices across ' +
+      'five House lists, every one matching \u2014 so the whole of the house discount is the Trade ' +
+      'Points it does not charge, plus getting the thing at all.' }));
+    body.appendChild(el('p', { html:
       'The <b>Weapons</b> column is how many weapons carry each feature. A figure resting on ' +
       'one or two is describing those weapons rather than a market rate \u2014 read it as an ' +
       'observation about the meltagun, not as the price of Damage (3).' }));
@@ -1725,6 +1867,53 @@ if (typeof module !== 'undefined') module.exports = Pricing;
     root.appendChild(el('details', {}, el('summary', { text: 'How this is worked out, and what it cannot tell you' }), body));
   }
 
+  /* ---- which weapons are on offer ----------------------------------------
+     The Trading Post alone by default. Gang list weapons are off unless asked
+     for, so the pickers are not swamped by kit most gangs cannot buy. */
+  const scope = { includeGang: false, gang: 'all' };
+
+  function repopulate(sel, list, keepValue) {
+    const cats = [];
+    for (const p of list) {
+      let c = cats.find(x => x.name === p.cat);
+      if (!c) { c = { name: p.cat, items: [] }; cats.push(c); }
+      c.items.push(p.name);
+    }
+    sel.innerHTML = '';
+    sel.appendChild(el('option', { value: '', text: 'Pick a profile...' }));
+    for (const c of cats) {
+      const g = el('optgroup', { label: c.name });
+      for (const n of c.items) g.appendChild(el('option', { value: n, text: n }));
+      sel.appendChild(g);
+    }
+    if (keepValue && list.some(p => p.name === keepValue)) sel.value = keepValue;
+  }
+
+  function applyScope() {
+    for (const [root, kind, binds] of [[rangedRoot, 'ranged', ['pick.weapon']],
+                                       [meleeRoot, 'melee', ['pick.weapon', 'pick.weapon2']]]) {
+      const list = Data.weapons(kind, scope);
+      for (const b of binds) {
+        const sel = root.querySelector('[data-bind="' + b + '"]');
+        if (sel) repopulate(sel, list, sel.value);
+      }
+      root.dispatchEvent(new Event('change'));
+    }
+    valueRoot.innerHTML = '';
+    buildValue(valueRoot, scope);
+
+    const n = Data.gangRanged.length + Data.gangMelee.length;
+    const shown = scope.includeGang
+      ? (scope.gang === 'all' ? n
+         : Data.gangRanged.concat(Data.gangMelee).filter(w => w.gang === scope.gang).length)
+      : 0;
+    document.getElementById('opt-note').textContent = scope.includeGang
+      ? 'Showing the Trading Post plus ' + shown + ' weapon' + (shown === 1 ? '' : 's') +
+        ' the ' + (scope.gang === 'all' ? 'House lists' : scope.gang + ' list') +
+        ' sell that it does not. Both price the same weapons alike, so the two mix safely.'
+      : 'Trading Post only. Tick the box to add weapons sold on the House gang lists.';
+  }
+
   /* ---- boot -------------------------------------------------------------- */
   const rangedRoot = document.getElementById('panel-ranged');
   const meleeRoot = document.getElementById('panel-melee');
@@ -1733,7 +1922,19 @@ if (typeof module !== 'undefined') module.exports = Pricing;
   buildMelee(meleeRoot);
   wire(rangedRoot, false);
   wire(meleeRoot, true);
-  buildValue(valueRoot);
+  buildValue(valueRoot, scope);
+
+  const gangBox = document.getElementById('opt-gang');
+  const gangSel = document.getElementById('opt-which');
+  gangSel.appendChild(el('option', { value: 'all', text: 'All House lists' }));
+  for (const g of Data.gangs) gangSel.appendChild(el('option', { value: g, text: g }));
+  gangBox.addEventListener('change', () => {
+    scope.includeGang = gangBox.checked;
+    gangSel.classList.toggle('hidden', !scope.includeGang);
+    applyScope();
+  });
+  gangSel.addEventListener('change', () => { scope.gang = gangSel.value; applyScope(); });
+  applyScope();
 
   const tabs = [document.getElementById('tab-ranged'), document.getElementById('tab-melee'),
                 document.getElementById('tab-value')];
